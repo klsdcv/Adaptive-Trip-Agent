@@ -29,7 +29,7 @@ class OpenMeteoTools(ToolProvider):
         response = await self._client.get(
             "https://api.open-meteo.com/v1/forecast",
             params={"latitude": latitude, "longitude": longitude,
-                    "hourly": "precipitation_probability,rain,weather_code", "forecast_days": 1},
+                    "hourly": "precipitation_probability,rain,weather_code", "forecast_days": 2, "timezone": "GMT"},
         )
         hourly = response.json().get("hourly", {}) if response.status_code == 200 else {}
         times = hourly.get("time", [])
@@ -40,12 +40,28 @@ class OpenMeteoTools(ToolProvider):
                                         valid_until=now + timedelta(minutes=30), source="open_meteo"),
                 attempts=1, error_code=f"http_{response.status_code}",
             )
-        forecast_at = datetime.fromisoformat(times[0]).replace(tzinfo=timezone.utc)
+        target = request.arguments.get('forecast_at', now.isoformat())
+        target = datetime.fromisoformat(target.replace('Z', '+00:00'))
+        if target.tzinfo is None:
+            raise ValueError('forecast_at requires a timezone')
+        selected = next((
+            (datetime.fromisoformat(value).replace(tzinfo=timezone.utc), probability)
+            for value, probability in zip(times, probabilities)
+            if datetime.fromisoformat(value).replace(tzinfo=timezone.utc) <= target
+            < datetime.fromisoformat(value).replace(tzinfo=timezone.utc) + timedelta(hours=1)
+            and isinstance(probability, int) and not isinstance(probability, bool) and 0 <= probability <= 100
+        ), None)
+        if selected is None:
+            return ToolResult(observation=Observation(
+                id='open_meteo:weather', kind='weather', status='missing', observed_at=now,
+                valid_until=now + timedelta(minutes=30), source='open_meteo'),
+                attempts=1, error_code='missing_forecast')
+        forecast_at, probability = selected
         return ToolResult(
             observation=Observation(
                 id="open_meteo:weather", kind="weather", status="ok", observed_at=now,
                 valid_until=now + timedelta(minutes=30), source="open_meteo",
                 data=WeatherData(coordinates=Coordinates(latitude=latitude, longitude=longitude), forecast_at=forecast_at,
-                                 precipitation_probability=probabilities[0]),
+                                 precipitation_probability=probability),
             ), attempts=1,
         )

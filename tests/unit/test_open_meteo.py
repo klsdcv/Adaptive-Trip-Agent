@@ -17,8 +17,8 @@ async def test_seoul_hourly_rain_probability_is_normalized() -> None:
         assert request.url.params["hourly"] == "precipitation_probability,rain,weather_code"
         return httpx.Response(200, json={
             "hourly": {
-                "time": ["2026-09-08T15:00"],
-                "precipitation_probability": [67],
+                "time": ["2026-09-08T00:00", "2026-09-08T05:00"],
+                "precipitation_probability": [0, 67],
                 "rain": [1.2],
                 "weather_code": [61],
             }
