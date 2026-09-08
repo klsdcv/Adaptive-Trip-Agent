@@ -29,4 +29,5 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = [
   "ignore:The default value of `allowed_objects` will change:langchain_core._api.deprecation.LangChainPendingDeprecationWarning",
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning:starlette.testclient",
 ]
