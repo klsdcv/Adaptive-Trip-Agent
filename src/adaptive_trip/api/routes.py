@@ -6,9 +6,10 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, status
 
 from adaptive_trip.agent.graph import Replanner
-from adaptive_trip.api.schemas import DecisionInput, ReplanInput
+from adaptive_trip.api.schemas import DecisionInput, DraftInput, ReplanInput
 from adaptive_trip.domain.models import Proposal, TripState
 from adaptive_trip.services.decisions import DecisionService
+from adaptive_trip.services.intake import Draft, IntakeService
 from adaptive_trip.storage.repository import Repository
 
 
@@ -17,8 +18,17 @@ def build_router(
     decisions: DecisionService | None = None,
     replanner: Replanner | None = None,
     clock: Callable[[], datetime] | None = None,
+    intake: IntakeService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
+
+    @router.post("/drafts", response_model=Draft, status_code=status.HTTP_201_CREATED)
+    async def create_draft(body: DraftInput) -> Draft:
+        service = intake or IntakeService()
+        try:
+            return await service.prepare(body.text, body.preferences)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @router.post("/trips", response_model=TripState, status_code=status.HTTP_201_CREATED)
     def create_trip(trip: TripState) -> TripState:

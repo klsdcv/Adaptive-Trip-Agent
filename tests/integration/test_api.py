@@ -33,6 +33,21 @@ def test_unknown_trip_returns_not_found(tmp_path) -> None:
     assert response.status_code == 404
 
 
+def test_text_itinerary_creates_an_unconfirmed_draft(tmp_path) -> None:
+    from adaptive_trip.api.app import create_app
+    from adaptive_trip.storage.repository import Repository
+
+    with TestClient(create_app(Repository(tmp_path / "trip.db"))) as client:
+        response = client.post(
+            "/api/drafts",
+            json={"text": "내일 미술관 갔다가 저녁", "preferences": {}},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["confirmed"] is False
+    assert response.json()["questions"]
+
+
 def test_event_creates_a_pending_replanning_proposal(tmp_path, scenario) -> None:
     from adaptive_trip.agent.contracts import AgentAction
     from adaptive_trip.agent.gateway import ScriptedGateway

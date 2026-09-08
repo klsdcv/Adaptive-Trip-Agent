@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from adaptive_trip.domain.models import ChangeEvent, Observation
 
@@ -21,3 +21,10 @@ class ReplanInput(BaseModel):
 
     event: ChangeEvent
     observations: list[Observation]
+
+
+class DraftInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    preferences: dict[str, object] = Field(default_factory=dict)
