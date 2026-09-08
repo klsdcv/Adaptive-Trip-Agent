@@ -16,3 +16,18 @@ CREATE TABLE IF NOT EXISTS events (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (trip_id, fingerprint)
 );
+
+CREATE TABLE IF NOT EXISTS proposals (
+    id TEXT PRIMARY KEY,
+    trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    proposal_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS decision_requests (
+    trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    request_id TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (trip_id, request_id)
+);
