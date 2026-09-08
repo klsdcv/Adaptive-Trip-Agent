@@ -84,6 +84,17 @@ class Repository:
             raise KeyError(f"proposal {proposal_id!r} does not exist")
         return Proposal.model_validate_json(row["proposal_json"])
 
+    def pending_proposals(self, trip_id: str) -> list[Proposal]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT proposal_json FROM proposals WHERE trip_id = ? ORDER BY created_at", (trip_id,)
+            ).fetchall()
+        return [
+            proposal
+            for row in rows
+            if (proposal := Proposal.model_validate_json(row["proposal_json"])).status == "pending"
+        ]
+
     def apply_decision(
         self,
         *,

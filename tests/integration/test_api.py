@@ -92,6 +92,35 @@ def test_accepting_a_proposal_over_http_updates_the_trip(tmp_path, scenario) -> 
     assert response.json()["status"] == "applied"
 
 
+def test_pending_proposals_can_be_loaded_after_reconnect(tmp_path, scenario) -> None:
+    from adaptive_trip.api.app import create_app
+    from adaptive_trip.domain.models import Proposal
+    from adaptive_trip.storage.repository import Repository
+
+    loaded = scenario("rain")
+    repository = Repository(tmp_path / "trip.db")
+    repository.create(loaded.state)
+    repository.save_proposal(
+        Proposal(
+            id="pending-proposal",
+            trip_id=loaded.state.id,
+            base_version=loaded.state.version,
+            created_at=loaded.now,
+            expires_at=loaded.now + timedelta(minutes=10),
+            candidates=[],
+            reports={},
+            status="pending",
+            reason="rain",
+        )
+    )
+
+    with TestClient(create_app(repository)) as client:
+        response = client.get(f"/api/trips/{loaded.state.id}/proposals")
+
+    assert response.status_code == 200
+    assert [proposal["id"] for proposal in response.json()] == ["pending-proposal"]
+
+
 def test_event_creates_a_pending_replanning_proposal(tmp_path, scenario) -> None:
     from adaptive_trip.agent.contracts import AgentAction
     from adaptive_trip.agent.gateway import ScriptedGateway

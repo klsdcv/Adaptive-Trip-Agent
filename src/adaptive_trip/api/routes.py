@@ -47,6 +47,14 @@ def build_router(
         except KeyError as error:
             raise HTTPException(status_code=404, detail="Trip not found.") from error
 
+    @router.get("/trips/{trip_id}/proposals", response_model=list[Proposal])
+    def get_pending_proposals(trip_id: str) -> list[Proposal]:
+        try:
+            repository.get(trip_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="Trip not found.") from error
+        return repository.pending_proposals(trip_id)
+
     @router.post("/trips/{trip_id}/decisions")
     async def decide(trip_id: str, body: DecisionInput):
         if decisions is None:
