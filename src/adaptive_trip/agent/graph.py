@@ -39,6 +39,8 @@ class Replanner:
 
         def check_candidates(graph_state: dict[str, object]) -> dict[str, object]:
             action = graph_state["action"]
+            if isinstance(action, AgentAction) and action.kind == 'stop':
+                return {"eligible": [], "reports": {}, "reason": action.reason}
             if not isinstance(action, AgentAction) or action.kind != "candidates":
                 return {"eligible": [], "reports": {}, "reason": "No candidate action was produced."}
             reports: dict[str, Report] = {}
