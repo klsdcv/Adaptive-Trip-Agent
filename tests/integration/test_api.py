@@ -48,6 +48,50 @@ def test_text_itinerary_creates_an_unconfirmed_draft(tmp_path) -> None:
     assert response.json()["questions"]
 
 
+def test_accepting_a_proposal_over_http_updates_the_trip(tmp_path, scenario) -> None:
+    from adaptive_trip.api.app import create_app
+    from adaptive_trip.domain.models import Candidate, Proposal, Report
+    from adaptive_trip.storage.repository import Repository
+
+    loaded = scenario("rain")
+    repository = Repository(tmp_path / "trip.db")
+    repository.create(loaded.state)
+    repository.save_proposal(
+        Proposal(
+            id="http-proposal",
+            trip_id=loaded.state.id,
+            base_version=loaded.state.version,
+            created_at=loaded.now,
+            expires_at=loaded.now + timedelta(minutes=10),
+            candidates=[
+                Candidate(
+                    id="keep-plan",
+                    items=loaded.state.items,
+                    rationale="Keep itinerary.",
+                    signature="keep-plan",
+                )
+            ],
+            reports={"keep-plan": Report(checks=[])},
+            status="pending",
+            reason="test",
+        )
+    )
+
+    with TestClient(create_app(repository, clock=lambda: loaded.now)) as client:
+        response = client.post(
+            f"/api/trips/{loaded.state.id}/decisions",
+            json={
+                "proposal_id": "http-proposal",
+                "candidate_id": "keep-plan",
+                "action": "accept",
+                "request_id": "http-choice",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "applied"
+
+
 def test_event_creates_a_pending_replanning_proposal(tmp_path, scenario) -> None:
     from adaptive_trip.agent.contracts import AgentAction
     from adaptive_trip.agent.gateway import ScriptedGateway
