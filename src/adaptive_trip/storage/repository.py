@@ -36,6 +36,15 @@ class Repository:
             raise KeyError(f"trip {trip_id!r} does not exist")
         return TripState.model_validate_json(row["state_json"])
 
+    def active_trips(self) -> list[TripState]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT state_json FROM trips").fetchall()
+        return [
+            state
+            for row in rows
+            if (state := TripState.model_validate_json(row["state_json"])).travel_mode
+        ]
+
     def compare_and_swap(self, state: TripState, *, expected_version: int) -> bool:
         with self._transaction() as connection:
             cursor = connection.execute(
