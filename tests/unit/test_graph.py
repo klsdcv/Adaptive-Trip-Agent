@@ -161,3 +161,121 @@ async def test_replanner_executes_requested_tool_and_returns_evidence_to_model(s
     assert result.tool_calls == 1
     assert [item.id for item in result.observations] == ["details-museum"]
     assert gateway.contexts[1]["observations"][0]["id"] == "details-museum"
+
+
+@pytest.mark.asyncio
+async def test_replanner_returns_validation_failures_for_candidate_revision(scenario) -> None:
+    from adaptive_trip.agent.contracts import AgentAction
+    from adaptive_trip.agent.graph import Replanner
+    from adaptive_trip.tools.synthetic import SyntheticTools
+
+    loaded = scenario("rain")
+    valid_candidates = [
+        _indoor_candidate(loaded, "synthetic:museum", "Museum"),
+        _indoor_candidate(loaded, "synthetic:market", "Market"),
+        _indoor_candidate(loaded, "synthetic:cafe", "Cafe"),
+    ]
+    observations = _confirmed_observations(loaded, valid_candidates)
+    fixed_dinner = loaded.state.items[2]
+    broken_dinner = fixed_dinner.model_copy(
+        update={"start": fixed_dinner.start + timedelta(minutes=30)}
+    )
+    invalid_candidate = Candidate(
+        id="moves-fixed-dinner",
+        items=[*loaded.state.items[:2], broken_dinner],
+        rationale="Invalid first attempt.",
+        signature="moves-fixed-dinner",
+    )
+
+    class RevisingGateway:
+        def __init__(self) -> None:
+            self.contexts: list[dict[str, object]] = []
+            self.actions = iter([
+                AgentAction(
+                    kind="candidates",
+                    candidates=[invalid_candidate],
+                    reason="First attempt.",
+                ),
+                AgentAction(
+                    kind="candidates",
+                    candidates=valid_candidates,
+                    reason="Revised after deterministic validation.",
+                ),
+            ])
+
+        async def next(self, context: dict[str, object]) -> AgentAction:
+            self.contexts.append(context)
+            return next(self.actions)
+
+    gateway = RevisingGateway()
+    result = await Replanner(gateway, SyntheticTools(observations)).run(
+        loaded.state, loaded.event, observations, loaded.now
+    )
+
+    assert len(result.proposal.candidates) == 3
+    assert result.model_calls == 2
+    assert any(
+        check["code"] == "fixed_time" and check["status"] == "fail"
+        for check in gateway.contexts[1]["validation"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_candidate_validation_uses_observation_created_by_tool_call(scenario) -> None:
+    from adaptive_trip.agent.contracts import AgentAction
+    from adaptive_trip.agent.gateway import ScriptedGateway
+    from adaptive_trip.agent.graph import Replanner
+    from adaptive_trip.domain.models import Constraints
+    from adaptive_trip.tools.contracts import ToolRequest
+    from adaptive_trip.tools.synthetic import SyntheticTools
+
+    loaded = scenario("rain")
+    original = loaded.state.items[1]
+    replacement = original.model_copy(
+        update={
+            "place_id": "synthetic:museum",
+            "title": "Museum",
+            "activity_type": "indoor",
+            "rain_sensitive": False,
+        }
+    )
+    state = loaded.state.model_copy(
+        update={"items": [original], "constraints": Constraints()}
+    )
+    candidate = Candidate(
+        id="museum-plan",
+        items=[replacement],
+        rationale="Move indoors.",
+        signature="synthetic:museum|indoor",
+    )
+    details = Observation(
+        id="details-museum",
+        kind="place",
+        status="ok",
+        observed_at=loaded.now,
+        valid_until=loaded.now + timedelta(hours=1),
+        source="synthetic",
+        data=PlacesData(
+            place_id="synthetic:museum",
+            opening_intervals=[(replacement.start, replacement.end)],
+        ),
+    )
+    gateway = ScriptedGateway([
+        AgentAction(
+            kind="tool",
+            request=ToolRequest(
+                name="place_details",
+                arguments={"place_id": "synthetic:museum"},
+                sku="places_details",
+                units=1,
+            ),
+            reason="Check the museum.",
+        ),
+        AgentAction(kind="candidates", candidates=[candidate], reason="Verified."),
+    ])
+
+    result = await Replanner(
+        gateway, SyntheticTools([details]), target_candidates=1
+    ).run(state, loaded.event, [], loaded.now)
+
+    assert [item.id for item in result.proposal.candidates] == ["museum-plan"]
