@@ -87,3 +87,56 @@ async def test_unsupported_weather_location_is_not_counted_as_weather_data() -> 
     assert result.observation.kind == "weather"
     assert result.observation.status == "unsupported"
     assert result.error_code == "unsupported_location"
+
+
+@pytest.mark.asyncio
+async def test_text_search_returns_place_identity_and_dated_opening_hours() -> None:
+    from adaptive_trip.tools.contracts import ToolRequest
+    from adaptive_trip.tools.google_places import GoogleTools
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/places:searchText"
+        assert request.headers["X-Goog-FieldMask"] == (
+            "places.id,places.displayName,places.location,"
+            "places.currentOpeningHours,places.timeZone"
+        )
+        assert request.read()
+        return httpx.Response(200, json={
+            "places": [{
+                "id": "ChIJmuseum",
+                "displayName": {"text": "서울 실내 박물관"},
+                "location": {"latitude": 37.57, "longitude": 126.98},
+                "timeZone": {"id": "Asia/Seoul"},
+                "currentOpeningHours": {
+                    "periods": [{
+                        "open": {
+                            "date": {"year": 2026, "month": 9, "day": 8},
+                            "hour": 9,
+                            "minute": 0,
+                        },
+                        "close": {
+                            "date": {"year": 2026, "month": 9, "day": 8},
+                            "hour": 18,
+                            "minute": 0,
+                        },
+                    }]
+                },
+            }]
+        })
+
+    tools = GoogleTools(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        api_key="test-key",
+        clock=lambda: datetime(2026, 9, 8, 0, 0, tzinfo=timezone.utc),
+    )
+    result = await tools.call(ToolRequest(
+        name="places_search",
+        arguments={"query": "비 오는 날 실내 박물관", "latitude": 37.57, "longitude": 126.98},
+        sku="places_text_search",
+        units=1,
+    ))
+
+    assert result.observation.status == "ok"
+    assert result.observation.data.place_id == "ChIJmuseum"
+    assert result.observation.data.display_name == "서울 실내 박물관"
+    assert result.observation.data.opening_intervals[0][0].isoformat() == "2026-09-08T09:00:00+09:00"

@@ -57,6 +57,7 @@ class PlacesData(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     place_id: str
+    display_name: str | None = None
     coordinates: Coordinates | None = None
     opening_intervals: list[tuple[AwareDatetime, AwareDatetime]] | None = None
     price: Money | None = None

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -10,7 +11,11 @@ from adaptive_trip.domain.models import Coordinates, Observation, PlacesData, Ro
 from adaptive_trip.tools.contracts import ToolProvider, ToolRequest, ToolResult
 
 
-PLACE_DETAILS_FIELDS = "id,displayName,location,currentOpeningHours"
+PLACE_DETAILS_FIELDS = "id,displayName,location,currentOpeningHours,timeZone"
+SEARCH_FIELDS = (
+    "places.id,places.displayName,places.location,"
+    "places.currentOpeningHours,places.timeZone"
+)
 
 
 class GoogleTools(ToolProvider):
@@ -28,6 +33,8 @@ class GoogleTools(ToolProvider):
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     async def call(self, request: ToolRequest) -> ToolResult:
+        if request.name == "places_search":
+            return await self._places_search(request)
         if request.name == "route":
             return await self._route(request)
         if request.name == "weather":
@@ -55,18 +62,87 @@ class GoogleTools(ToolProvider):
                 ),
                 attempts=1, error_code=f"http_{response.status_code}",
             )
-        payload = response.json()
+        return ToolResult(
+            observation=self._place_observation(response.json(), place_id, now),
+            attempts=1,
+        )
+
+    async def _places_search(self, request: ToolRequest) -> ToolResult:
+        query = request.arguments.get("query")
+        latitude = request.arguments.get("latitude")
+        longitude = request.arguments.get("longitude")
+        if (
+            not isinstance(query, str)
+            or not query.strip()
+            or not isinstance(latitude, (int, float))
+            or not isinstance(longitude, (int, float))
+        ):
+            return self._unsupported(request, "invalid_places_search")
+        response = await self._client.post(
+            "https://places.googleapis.com/v1/places:searchText",
+            headers={
+                "X-Goog-Api-Key": self._api_key,
+                "X-Goog-FieldMask": SEARCH_FIELDS,
+            },
+            json={
+                "textQuery": query,
+                "pageSize": 1,
+                "locationBias": {
+                    "circle": {
+                        "center": {
+                            "latitude": latitude,
+                            "longitude": longitude,
+                        },
+                        "radius": 5000,
+                    }
+                },
+            },
+        )
+        now = self._clock()
+        places = response.json().get("places", []) if response.status_code == 200 else []
+        if not places or not isinstance(places[0], dict):
+            return ToolResult(
+                observation=Observation(
+                    id="google:places_search",
+                    kind="place",
+                    status="missing",
+                    observed_at=now,
+                    valid_until=now + timedelta(minutes=5),
+                    source="google_places",
+                ),
+                attempts=1,
+                error_code=f"http_{response.status_code}",
+            )
+        place_id = places[0].get("id")
+        if not isinstance(place_id, str) or not place_id:
+            return self._unsupported(request, "missing_place_id")
+        return ToolResult(
+            observation=self._place_observation(places[0], place_id, now),
+            attempts=1,
+        )
+
+    @staticmethod
+    def _place_observation(payload: dict, place_id: str, now: datetime) -> Observation:
         location = payload.get("location")
         coordinates = None
         if isinstance(location, dict) and "latitude" in location and "longitude" in location:
             coordinates = Coordinates(latitude=location["latitude"], longitude=location["longitude"])
-        return ToolResult(
-            observation=Observation(
-                id=f"google:place:{place_id}", kind="place", status="ok",
-                observed_at=now, valid_until=now + timedelta(hours=1), source="google_places",
-                data=PlacesData(place_id=payload.get("id", place_id), coordinates=coordinates),
+        display_name = payload.get("displayName", {}).get("text")
+        if not isinstance(display_name, str):
+            display_name = None
+        return Observation(
+            id=f"google:place:{place_id}",
+            kind="place",
+            status="ok",
+            observed_at=now,
+            valid_until=now + timedelta(hours=1),
+            source="google_places",
+            data=PlacesData(
+                place_id=payload.get("id", place_id),
+                display_name=display_name,
+                coordinates=coordinates,
+                opening_intervals=_opening_intervals(payload),
             ),
-            attempts=1,
         )
 
     async def _route(self, request: ToolRequest) -> ToolResult:
@@ -147,3 +223,42 @@ class GoogleTools(ToolProvider):
             ),
             attempts=1, error_code=error_code,
         )
+
+
+def _opening_intervals(payload: dict) -> list[tuple[datetime, datetime]] | None:
+    hours = payload.get("currentOpeningHours")
+    timezone_id = payload.get("timeZone", {}).get("id")
+    if not isinstance(hours, dict) or "periods" not in hours:
+        return None
+    periods = hours.get("periods")
+    if not isinstance(periods, list) or not isinstance(timezone_id, str):
+        return None
+    try:
+        place_timezone = ZoneInfo(timezone_id)
+    except ZoneInfoNotFoundError:
+        return None
+    intervals: list[tuple[datetime, datetime]] = []
+    for period in periods:
+        if not isinstance(period, dict):
+            continue
+        opened = _dated_point(period.get("open"), place_timezone)
+        closed = _dated_point(period.get("close"), place_timezone)
+        if opened is not None and closed is not None and opened < closed:
+            intervals.append((opened, closed))
+    if periods and not intervals:
+        return None
+    return intervals
+
+
+def _dated_point(value, place_timezone: ZoneInfo) -> datetime | None:
+    if not isinstance(value, dict) or not isinstance(value.get("date"), dict):
+        return None
+    raw_date = value["date"]
+    try:
+        return datetime.combine(
+            date(raw_date["year"], raw_date["month"], raw_date["day"]),
+            time(value.get("hour", 0), value.get("minute", 0)),
+            tzinfo=place_timezone,
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
