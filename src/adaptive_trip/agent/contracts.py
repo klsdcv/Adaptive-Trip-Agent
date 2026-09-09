@@ -17,6 +17,7 @@ class AgentAction(BaseModel):
     reason: str
     provider_response_id: str | None = None
     provider_call_id: str | None = None
+    provider_output: list[dict[str, object]] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def tool_action_requires_request(self) -> AgentAction:

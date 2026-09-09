@@ -98,17 +98,20 @@ async def test_gateway_returns_tool_output_with_original_call_id():
         first = await gateway.next({})
         second = await gateway.next({
             'tool_result': {
-                'response_id': first.provider_response_id,
+                'response_output': first.provider_output,
                 'call_id': first.provider_call_id,
                 'output': {'observation': {'status': 'ok'}},
             }
         })
 
     assert second.reason == 'Evidence received'
-    assert bodies[1]['previous_response_id'] == 'resp-details'
-    assert bodies[1]['input'][0]['type'] == 'function_call_output'
-    assert bodies[1]['input'][0]['call_id'] == 'call-details'
-    assert json.loads(bodies[1]['input'][0]['output'])['observation']['status'] == 'ok'
+    assert 'previous_response_id' not in bodies[1]
+    assert bodies[1]['store'] is False
+    assert bodies[1]['input'][0]['role'] == 'user'
+    assert bodies[1]['input'][1]['type'] == 'function_call'
+    assert bodies[1]['input'][2]['type'] == 'function_call_output'
+    assert bodies[1]['input'][2]['call_id'] == 'call-details'
+    assert json.loads(bodies[1]['input'][2]['output'])['observation']['status'] == 'ok'
 
 
 @pytest.mark.asyncio

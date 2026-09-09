@@ -122,7 +122,9 @@ class LiveModelGateway:
             if function_calls:
                 if len(function_calls) != 1:
                     return AgentAction(kind="stop", reason="invalid_tool_request")
-                return self._tool_action(payload, function_calls[0])
+                return self._tool_action(
+                    payload, function_calls[0], request_body["input"]
+                )
             output = "".join(
                 part["text"]
                 for item in payload.get("output", [])
@@ -161,16 +163,25 @@ class LiveModelGateway:
         }
         tool_result = context.get("tool_result")
         if tool_result is None:
-            body["input"] = json.dumps(context, ensure_ascii=False)
+            body["input"] = [
+                {
+                    "role": "user",
+                    "content": json.dumps(context, ensure_ascii=False),
+                }
+            ]
             return body
         if not isinstance(tool_result, dict):
             return None
-        response_id = tool_result.get("response_id")
+        response_output = tool_result.get("response_output")
         call_id = tool_result.get("call_id")
-        if not isinstance(response_id, str) or not isinstance(call_id, str):
+        if (
+            not isinstance(response_output, list)
+            or not all(isinstance(item, dict) for item in response_output)
+            or not isinstance(call_id, str)
+        ):
             return None
-        body["previous_response_id"] = response_id
         body["input"] = [
+            *response_output,
             {
                 "type": "function_call_output",
                 "call_id": call_id,
@@ -181,7 +192,9 @@ class LiveModelGateway:
 
     @staticmethod
     def _tool_action(
-        payload: dict[str, object], function_call: dict[str, object]
+        payload: dict[str, object],
+        function_call: dict[str, object],
+        provider_input: object,
     ) -> AgentAction:
         name = function_call.get("name")
         if name not in _ARGUMENT_MODELS:
@@ -193,7 +206,15 @@ class LiveModelGateway:
             )
             response_id = payload["id"]
             call_id = function_call["call_id"]
-            if not isinstance(response_id, str) or not isinstance(call_id, str):
+            response_output = payload["output"]
+            if (
+                not isinstance(response_id, str)
+                or not isinstance(call_id, str)
+                or not isinstance(provider_input, list)
+                or not all(isinstance(item, dict) for item in provider_input)
+                or not isinstance(response_output, list)
+                or not all(isinstance(item, dict) for item in response_output)
+            ):
                 raise ValueError("missing provider identifiers")
             return AgentAction(
                 kind="tool",
@@ -206,6 +227,7 @@ class LiveModelGateway:
                 reason=f"Model requested {name} evidence.",
                 provider_response_id=response_id,
                 provider_call_id=call_id,
+                provider_output=[*provider_input, *response_output],
             )
         except (json.JSONDecodeError, ValidationError, TypeError, KeyError, ValueError):
             return AgentAction(kind="stop", reason="invalid_tool_request")

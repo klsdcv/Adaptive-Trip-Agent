@@ -93,7 +93,7 @@ class Replanner:
                 "observations": observations,
                 "tool_calls": budget.used,
                 "tool_result": {
-                    "response_id": action.provider_response_id,
+                    "response_output": action.provider_output,
                     "call_id": action.provider_call_id,
                     "output": result.model_dump(mode="json"),
                 },
