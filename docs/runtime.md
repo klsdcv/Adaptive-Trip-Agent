@@ -15,6 +15,17 @@ Use the project virtual environment's Python. On Windows this is
 The default mode is synthetic. Keys remain on the server.
 
 Open `/docs` for the interactive API. Create a trip using `POST /api/trips`.
+For the browser UI, start a second terminal in `web`, run `npm run dev`, and
+open the local URL printed by Vite. Its development proxy forwards `/api` to
+the backend on `127.0.0.1:8000`.
+
+The intake flow first creates an unconfirmed draft. Enter an IANA timezone,
+destination latitude and longitude, a Google place query, and local start/end
+times, then confirm it. `POST /api/drafts/{draft_id}/confirm` resolves each
+query through Google Places and persists only the resulting provider place ID
+in the confirmed trip. Local form times are interpreted in the selected trip
+timezone. Draft confirmation is idempotent for the same request ID.
+
 `GET /api/trips/{id}/weather` fetches Open-Meteo for its current position.
 `GET /api/trips/{id}/notifications` returns detected weather impacts.
 `POST /api/trips/{id}/events` invokes the configured OpenAI model and validates
@@ -26,11 +37,14 @@ domain validation before it appears as a proposal.
 Travel-mode trips are checked once at server startup when due and then on the
 configured interval. The next due time is persisted across server restarts.
 
-Current limitations: a fully live trip must use real Google place IDs for every
-item that participates in route and opening-hours validation. The weather
-endpoint is separate from manual event submission. An empty proposal means no validated candidates, not a
-successful end-to-end travel plan. Synthetic mode has no scripted demo actions
-in this entrypoint. Use existing test fixtures for reproducible scenarios.
+Current limitations: the intake form currently confirms one itinerary item at
+a time, and unconfirmed drafts live in server memory until draft persistence is
+implemented. Every item that participates in route and opening-hours validation
+must have a real Google place ID; the confirmation flow now resolves that ID.
+The weather endpoint is separate from manual event submission. An empty proposal
+means no validated candidates, not a successful end-to-end travel plan.
+Synthetic mode has no scripted demo actions in this entrypoint. Use existing
+test fixtures for reproducible scenarios.
 
 OpenAI final decisions use JSON Schema structured output plus local Pydantic
 validation. Function arguments use strict schemas and an allowlist; malformed
