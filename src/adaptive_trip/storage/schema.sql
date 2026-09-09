@@ -36,3 +36,19 @@ CREATE TABLE IF NOT EXISTS decision_requests (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (trip_id, request_id)
 );
+
+CREATE TABLE IF NOT EXISTS drafts (
+    id TEXT PRIMARY KEY,
+    draft_json TEXT NOT NULL,
+    preferences_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS draft_confirmation_requests (
+    draft_id TEXT NOT NULL REFERENCES drafts(id) ON DELETE CASCADE,
+    request_id TEXT NOT NULL,
+    trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (draft_id, request_id)
+);

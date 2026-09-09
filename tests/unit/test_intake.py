@@ -193,3 +193,60 @@ async def test_confirm_interprets_naive_form_times_in_the_trip_timezone() -> Non
     )
 
     assert trip.items[0].start.isoformat() == "2026-09-10T10:00:00+09:00"
+
+
+@pytest.mark.asyncio
+async def test_draft_and_confirmation_survive_service_restart(tmp_path) -> None:
+    from adaptive_trip.services.intake import IntakeService
+    from adaptive_trip.storage.repository import Repository
+
+    now = datetime(2026, 9, 9, tzinfo=timezone.utc)
+
+    class CountingTools:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def call(self, request):
+            self.calls += 1
+            return ToolResult(
+                observation=Observation(
+                    id="persistent-place",
+                    kind="place",
+                    status="ok",
+                    observed_at=now,
+                    valid_until=now + timedelta(hours=1),
+                    source="test",
+                    data=PlacesData(place_id="persistent-google-place"),
+                ),
+                attempts=1,
+            )
+
+    repository = Repository(tmp_path / "trip.db")
+    tools = CountingTools()
+    first_service = IntakeService(tools=tools, repository=repository, clock=lambda: now)
+    draft = await first_service.prepare("후쿠오카 타워", {"pace": "slow"})
+    fields = {
+        "timezone": "Asia/Tokyo",
+        "search_origin": {"latitude": 33.5902, "longitude": 130.4017},
+        "items": [{
+            "title": "후쿠오카 타워",
+            "place_query": "후쿠오카 타워",
+            "activity_type": "sightseeing",
+            "start": "2026-09-10T10:00",
+            "end": "2026-09-10T12:00",
+            "fixed": False,
+        }],
+    }
+
+    restarted_service = IntakeService(tools=tools, repository=repository, clock=lambda: now)
+    first_trip = await restarted_service.confirm(
+        draft.id, fields, request_id="persistent-confirmation"
+    )
+    another_restart = IntakeService(tools=tools, repository=repository, clock=lambda: now)
+    repeated_trip = await another_restart.confirm(
+        draft.id, fields, request_id="persistent-confirmation"
+    )
+
+    assert repository.get(first_trip.id) == first_trip
+    assert repeated_trip == first_trip
+    assert tools.calls == 1

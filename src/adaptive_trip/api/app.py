@@ -24,7 +24,11 @@ def create_app(
 ) -> FastAPI:
     active_clock = clock or (lambda: datetime.now(timezone.utc))
     active_decisions = decisions or DecisionService(repository, clock=active_clock)
-    active_intake = intake or IntakeService(tools=tools, clock=active_clock)
+    active_intake = intake or IntakeService(
+        tools=tools,
+        clock=active_clock,
+        repository=repository,
+    )
     app = FastAPI(title="Adaptive Trip Agent")
     app.include_router(
         build_router(repository, active_decisions, replanner, active_clock, active_intake)

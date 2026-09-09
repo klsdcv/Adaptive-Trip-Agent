@@ -28,6 +28,84 @@ class Repository:
                 (state.id, state.version, state.model_dump_json()),
             )
 
+    def save_draft(self, draft_id: str, draft_json: str, preferences_json: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO drafts (id, draft_json, preferences_json)
+                VALUES (?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    draft_json = excluded.draft_json,
+                    preferences_json = excluded.preferences_json,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (draft_id, draft_json, preferences_json),
+            )
+
+    def get_draft(self, draft_id: str) -> tuple[str, str]:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT draft_json, preferences_json FROM drafts WHERE id = ?",
+                (draft_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"draft {draft_id!r} does not exist")
+        return row["draft_json"], row["preferences_json"]
+
+    def get_draft_confirmation(self, draft_id: str, request_id: str) -> TripState:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT trips.state_json
+                FROM draft_confirmation_requests
+                JOIN trips ON trips.id = draft_confirmation_requests.trip_id
+                WHERE draft_confirmation_requests.draft_id = ?
+                  AND draft_confirmation_requests.request_id = ?
+                """,
+                (draft_id, request_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError("draft confirmation does not exist")
+        return TripState.model_validate_json(row["state_json"])
+
+    def confirm_draft(
+        self,
+        *,
+        draft_id: str,
+        request_id: str,
+        draft_json: str,
+        state: TripState,
+    ) -> TripState:
+        with self._transaction() as connection:
+            existing = connection.execute(
+                """
+                SELECT trips.state_json
+                FROM draft_confirmation_requests
+                JOIN trips ON trips.id = draft_confirmation_requests.trip_id
+                WHERE draft_confirmation_requests.draft_id = ?
+                  AND draft_confirmation_requests.request_id = ?
+                """,
+                (draft_id, request_id),
+            ).fetchone()
+            if existing is not None:
+                return TripState.model_validate_json(existing["state_json"])
+            connection.execute(
+                "INSERT INTO trips (id, version, state_json) VALUES (?, ?, ?)",
+                (state.id, state.version, state.model_dump_json()),
+            )
+            connection.execute(
+                """
+                INSERT INTO draft_confirmation_requests (draft_id, request_id, trip_id)
+                VALUES (?, ?, ?)
+                """,
+                (draft_id, request_id, state.id),
+            )
+            connection.execute(
+                "UPDATE drafts SET draft_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (draft_json, draft_id),
+            )
+            return state
+
     def get(self, trip_id: str) -> TripState:
         with self._connect() as connection:
             row = connection.execute(
