@@ -71,32 +71,30 @@ class GoogleTools(ToolProvider):
         query = request.arguments.get("query")
         latitude = request.arguments.get("latitude")
         longitude = request.arguments.get("longitude")
-        if (
-            not isinstance(query, str)
-            or not query.strip()
-            or not isinstance(latitude, (int, float))
-            or not isinstance(longitude, (int, float))
-        ):
+        if not isinstance(query, str) or not query.strip():
             return self._unsupported(request, "invalid_places_search")
+        has_latitude = isinstance(latitude, (int, float))
+        has_longitude = isinstance(longitude, (int, float))
+        if has_latitude != has_longitude:
+            return self._unsupported(request, "invalid_places_search")
+        body = {"textQuery": query, "pageSize": 1}
+        if has_latitude and has_longitude:
+            body["locationBias"] = {
+                "circle": {
+                    "center": {
+                        "latitude": latitude,
+                        "longitude": longitude,
+                    },
+                    "radius": 5000,
+                }
+            }
         response = await self._client.post(
             "https://places.googleapis.com/v1/places:searchText",
             headers={
                 "X-Goog-Api-Key": self._api_key,
                 "X-Goog-FieldMask": SEARCH_FIELDS,
             },
-            json={
-                "textQuery": query,
-                "pageSize": 1,
-                "locationBias": {
-                    "circle": {
-                        "center": {
-                            "latitude": latitude,
-                            "longitude": longitude,
-                        },
-                        "radius": 5000,
-                    }
-                },
-            },
+            json=body,
         )
         now = self._clock()
         places = response.json().get("places", []) if response.status_code == 200 else []

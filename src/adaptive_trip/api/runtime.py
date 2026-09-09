@@ -13,6 +13,7 @@ from adaptive_trip.agent.gateway import LiveModelGateway, ScriptedGateway
 from adaptive_trip.agent.graph import Replanner
 from adaptive_trip.api.app import create_app
 from adaptive_trip.services.monitor import Monitor
+from adaptive_trip.services.intake_openai import LiveIntakeParser
 from adaptive_trip.storage.repository import Repository
 from adaptive_trip.tools.contracts import ToolProvider, ToolRequest, ToolResult
 from adaptive_trip.tools.google_places import GoogleTools
@@ -43,12 +44,20 @@ def build_app(*, settings=None, transport=None, clock=None):
                 raise ValueError(f'{name} is required in live mode')
         tools = LiveTools(client, configuration['GOOGLE_MAPS_API_KEY'], active_clock)
         model = LiveModelGateway(client, api_key=configuration['OPENAI_API_KEY'], model_id=configuration['OPENAI_MODEL'])
+        intake_parser = LiveIntakeParser(client, api_key=configuration['OPENAI_API_KEY'], model_id=configuration['OPENAI_MODEL'])
     else:
         tools = SyntheticTools([])
         model = ScriptedGateway([])
+        intake_parser = None
     repository = Repository(Path(configuration.get('APP_DATA_DIR', '.local')) / 'trip.db')
     replanner = Replanner(model, tools)
-    app = create_app(repository, replanner=replanner, clock=active_clock, tools=tools)
+    app = create_app(
+        repository,
+        replanner=replanner,
+        clock=active_clock,
+        tools=tools,
+        intake_parser=intake_parser,
+    )
     interval_seconds = int(configuration.get('MONITOR_INTERVAL_SECONDS', '1800'))
     if interval_seconds < 1:
         raise ValueError('MONITOR_INTERVAL_SECONDS must be positive')

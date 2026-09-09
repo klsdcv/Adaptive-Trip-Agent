@@ -72,15 +72,26 @@ export interface TripState {
 export interface Draft {
   id: string;
   source_text: string;
-  items: ItineraryItem[];
+  items: DraftItem[];
   questions: string[];
   assumptions: string[];
   confirmed: boolean;
 }
 
+export interface DraftItem {
+  id: string;
+  title: string;
+  place_query: string;
+  activity_type: string;
+  start: string | null;
+  end: string | null;
+  fixed: boolean;
+  rain_sensitive: boolean;
+}
+
 export interface ConfirmedDraftFields {
   timezone: string;
-  search_origin: { latitude: number; longitude: number };
+  search_origin?: { latitude: number; longitude: number };
   items: Array<{
     title: string;
     place_query: string;

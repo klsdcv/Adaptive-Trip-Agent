@@ -19,12 +19,14 @@ For the browser UI, start a second terminal in `web`, run `npm run dev`, and
 open the local URL printed by Vite. Its development proxy forwards `/api` to
 the backend on `127.0.0.1:8000`.
 
-The intake flow first creates an unconfirmed draft. Enter an IANA timezone,
-destination latitude and longitude, a Google place query, and local start/end
-times, then confirm it. `POST /api/drafts/{draft_id}/confirm` resolves each
-query through Google Places and persists only the resulting provider place ID
-in the confirmed trip. Local form times are interpreted in the selected trip
-timezone. Draft confirmation is idempotent for the same request ID.
+In live mode, the intake flow uses a stateless OpenAI structured-output request
+to extract multiple places, local times, fixed reservations, questions, and
+explicit assumptions from free text. Review those fields before confirming.
+`POST /api/drafts/{draft_id}/confirm` resolves each query through Google Places
+and persists only the resulting provider place ID in the confirmed trip. The
+first resolved place supplies the destination coordinates when the optional
+search coordinates are blank. Local form times are interpreted in the selected
+trip timezone. Drafts and idempotent confirmation request IDs persist in SQLite.
 
 `GET /api/trips/{id}/weather` fetches Open-Meteo for its current position.
 `GET /api/trips/{id}/notifications` returns detected weather impacts.
@@ -37,10 +39,10 @@ domain validation before it appears as a proposal.
 Travel-mode trips are checked once at server startup when due and then on the
 configured interval. The next due time is persisted across server restarts.
 
-Current limitations: the intake form currently confirms one itinerary item at
-a time, and unconfirmed drafts live in server memory until draft persistence is
-implemented. Every item that participates in route and opening-hours validation
-must have a real Google place ID; the confirmation flow now resolves that ID.
+Current limitations: ambiguous or missing dates and times still require user
+review before confirmation. Every item that participates in route and
+opening-hours validation must have a real Google place ID; the confirmation
+flow resolves that ID.
 The weather endpoint is separate from manual event submission. An empty proposal
 means no validated candidates, not a successful end-to-end travel plan.
 Synthetic mode has no scripted demo actions in this entrypoint. Use existing

@@ -89,3 +89,58 @@ def test_live_runtime_monitors_due_trips_and_exposes_notifications(tmp_path, sce
         pass
 
     assert weather_requests == 1
+
+
+def test_live_runtime_structures_free_text_into_multiple_draft_items(tmp_path, scenario):
+    from adaptive_trip.api.runtime import build_app
+
+    loaded = scenario("rain")
+
+    def respond(request):
+        parsed = {
+            "items": [
+                {
+                    "id": "item-1", "title": "오사카성", "place_query": "오사카성",
+                    "activity_type": "sightseeing", "start": "2026-09-10T10:00:00",
+                    "end": "2026-09-10T12:00:00", "fixed": False,
+                    "rain_sensitive": True,
+                },
+                {
+                    "id": "item-2", "title": "도톤보리 저녁",
+                    "place_query": "도톤보리 오사카", "activity_type": "dinner",
+                    "start": "2026-09-10T19:00:00", "end": "2026-09-10T20:30:00",
+                    "fixed": True, "rain_sensitive": False,
+                },
+            ],
+            "questions": [],
+            "assumptions": [],
+        }
+        return httpx.Response(200, json={
+            "status": "completed",
+            "output": [{
+                "type": "message",
+                "content": [{"type": "output_text", "text": json.dumps(parsed)}],
+            }],
+        })
+
+    app = build_app(
+        settings={
+            "APP_MODE": "live",
+            "APP_DATA_DIR": str(tmp_path),
+            "OPENAI_API_KEY": "test",
+            "OPENAI_MODEL": "test",
+            "GOOGLE_MAPS_API_KEY": "test",
+        },
+        transport=httpx.MockTransport(respond),
+        clock=lambda: loaded.now,
+    )
+    with TestClient(app) as client:
+        response = client.post("/api/drafts", json={
+            "text": "오사카성과 도톤보리 저녁 예약",
+            "preferences": {"timezone": "Asia/Tokyo"},
+        })
+
+    assert response.status_code == 201
+    assert [item["title"] for item in response.json()["items"]] == [
+        "오사카성", "도톤보리 저녁",
+    ]

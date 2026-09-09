@@ -250,3 +250,110 @@ async def test_draft_and_confirmation_survive_service_restart(tmp_path) -> None:
     assert repository.get(first_trip.id) == first_trip
     assert repeated_trip == first_trip
     assert tools.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_prepare_uses_parser_to_create_multiple_draft_items() -> None:
+    from adaptive_trip.services.intake import (
+        DraftItem,
+        IntakeService,
+        ParsedDraft,
+    )
+
+    class TwoItemParser:
+        async def parse(self, text, preferences, reference_time):
+            return ParsedDraft(
+                items=[
+                    DraftItem(
+                        id="draft-item-1",
+                        title="오사카성",
+                        place_query="오사카성",
+                        activity_type="sightseeing",
+                        start="2026-09-10T10:00",
+                        end="2026-09-10T12:00",
+                        fixed=False,
+                        rain_sensitive=True,
+                    ),
+                    DraftItem(
+                        id="draft-item-2",
+                        title="도톤보리 저녁",
+                        place_query="도톤보리 오사카",
+                        activity_type="dinner",
+                        start="2026-09-10T19:00",
+                        end="2026-09-10T20:30",
+                        fixed=True,
+                        rain_sensitive=False,
+                    ),
+                ],
+                questions=[],
+                assumptions=["저녁 식사 체류시간을 90분으로 추정했습니다."],
+            )
+
+    service = IntakeService(parser=TwoItemParser())
+    draft = await service.prepare(
+        "9월 10일 10시 오사카성, 19시 도톤보리 저녁 예약",
+        {},
+    )
+
+    assert [item.title for item in draft.items] == ["오사카성", "도톤보리 저녁"]
+    assert draft.items[1].fixed is True
+    assert draft.assumptions == ["저녁 식사 체류시간을 90분으로 추정했습니다."]
+
+
+@pytest.mark.asyncio
+async def test_confirm_uses_first_resolved_place_as_trip_location() -> None:
+    from adaptive_trip.services.intake import IntakeService
+
+    now = datetime(2026, 9, 9, tzinfo=timezone.utc)
+
+    class PlaceTools:
+        def __init__(self) -> None:
+            self.arguments = []
+
+        async def call(self, request):
+            self.arguments.append(request.arguments)
+            coordinates = Coordinates(latitude=34.6873, longitude=135.5262)
+            return ToolResult(
+                observation=Observation(
+                    id=f"place-{len(self.arguments)}",
+                    kind="place",
+                    status="ok",
+                    observed_at=now,
+                    valid_until=now + timedelta(hours=1),
+                    source="test",
+                    data=PlacesData(
+                        place_id=f"google-place-{len(self.arguments)}",
+                        coordinates=coordinates,
+                    ),
+                ),
+                attempts=1,
+            )
+
+    tools = PlaceTools()
+    service = IntakeService(tools=tools, clock=lambda: now)
+    draft = await service.prepare("오사카성, 도톤보리", {})
+    trip = await service.confirm(
+        draft.id,
+        {
+            "timezone": "Asia/Tokyo",
+            "items": [
+                {
+                    "title": "오사카성", "place_query": "오사카성",
+                    "activity_type": "sightseeing", "start": "2026-09-10T10:00",
+                    "end": "2026-09-10T12:00", "fixed": False,
+                },
+                {
+                    "title": "도톤보리", "place_query": "도톤보리 오사카",
+                    "activity_type": "dinner", "start": "2026-09-10T19:00",
+                    "end": "2026-09-10T20:30", "fixed": False,
+                },
+            ],
+        },
+        request_id="automatic-location",
+    )
+
+    assert tools.arguments[0] == {"query": "오사카성"}
+    assert tools.arguments[1] == {
+        "query": "도톤보리 오사카", "latitude": 34.6873, "longitude": 135.5262,
+    }
+    assert trip.position == Coordinates(latitude=34.6873, longitude=135.5262)

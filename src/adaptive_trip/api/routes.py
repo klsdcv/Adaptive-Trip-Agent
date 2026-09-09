@@ -34,6 +34,8 @@ def build_router(
             return await intake_service.prepare(body.text, body.preferences)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
 
     @router.post(
         "/drafts/{draft_id}/confirm",

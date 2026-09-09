@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 
 import httpx
 import pytest
@@ -140,3 +141,34 @@ async def test_text_search_returns_place_identity_and_dated_opening_hours() -> N
     assert result.observation.data.place_id == "ChIJmuseum"
     assert result.observation.data.display_name == "서울 실내 박물관"
     assert result.observation.data.opening_intervals[0][0].isoformat() == "2026-09-08T09:00:00+09:00"
+
+
+@pytest.mark.asyncio
+async def test_text_search_can_resolve_the_first_place_without_location_bias() -> None:
+    from adaptive_trip.tools.contracts import ToolRequest
+    from adaptive_trip.tools.google_places import GoogleTools
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body == {"textQuery": "오사카성", "pageSize": 1}
+        return httpx.Response(200, json={
+            "places": [{
+                "id": "google:osaka-castle",
+                "displayName": {"text": "오사카성"},
+                "location": {"latitude": 34.6873, "longitude": 135.5262},
+            }]
+        })
+
+    tools = GoogleTools(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        api_key="test-key",
+    )
+    result = await tools.call(ToolRequest(
+        name="places_search",
+        arguments={"query": "오사카성"},
+        sku="places_text_search",
+        units=1,
+    ))
+
+    assert result.observation.status == "ok"
+    assert result.observation.data.coordinates.latitude == 34.6873

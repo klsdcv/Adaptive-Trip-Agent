@@ -12,7 +12,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const tripApi = {
-  createDraft: (text: string) => request<Draft>("/drafts", { method: "POST", body: JSON.stringify({ text, preferences: {} }) }),
+  createDraft: (text: string) => request<Draft>("/drafts", {
+    method: "POST",
+    body: JSON.stringify({
+      text,
+      preferences: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" },
+    }),
+  }),
   confirmDraft: (draftId: string, confirmedFields: ConfirmedDraftFields) =>
     request<TripState>(`/drafts/${encodeURIComponent(draftId)}/confirm`, {
       method: "POST",

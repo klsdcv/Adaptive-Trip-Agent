@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from adaptive_trip.agent.graph import Replanner
 from adaptive_trip.api.routes import build_router
 from adaptive_trip.services.decisions import DecisionService
-from adaptive_trip.services.intake import IntakeService
+from adaptive_trip.services.intake import IntakeParser, IntakeService
 from adaptive_trip.storage.repository import Repository
 from adaptive_trip.tools.contracts import ToolProvider
 
@@ -21,6 +21,7 @@ def create_app(
     clock: Callable[[], datetime] | None = None,
     intake: IntakeService | None = None,
     tools: ToolProvider | None = None,
+    intake_parser: IntakeParser | None = None,
 ) -> FastAPI:
     active_clock = clock or (lambda: datetime.now(timezone.utc))
     active_decisions = decisions or DecisionService(repository, clock=active_clock)
@@ -28,6 +29,7 @@ def create_app(
         tools=tools,
         clock=active_clock,
         repository=repository,
+        parser=intake_parser,
     )
     app = FastAPI(title="Adaptive Trip Agent")
     app.include_router(
