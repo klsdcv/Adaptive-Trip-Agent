@@ -6,7 +6,12 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, status
 
 from adaptive_trip.agent.graph import Replanner
-from adaptive_trip.api.schemas import DecisionInput, DraftInput, ReplanInput
+from adaptive_trip.api.schemas import (
+    DecisionInput,
+    DraftConfirmationInput,
+    DraftInput,
+    ReplanInput,
+)
 from adaptive_trip.domain.models import ChangeEvent, Proposal, TripState
 from adaptive_trip.services.decisions import DecisionService
 from adaptive_trip.services.intake import Draft, IntakeService
@@ -21,14 +26,39 @@ def build_router(
     intake: IntakeService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
+    intake_service = intake or IntakeService()
 
     @router.post("/drafts", response_model=Draft, status_code=status.HTTP_201_CREATED)
     async def create_draft(body: DraftInput) -> Draft:
-        service = intake or IntakeService()
         try:
-            return await service.prepare(body.text, body.preferences)
+            return await intake_service.prepare(body.text, body.preferences)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @router.post(
+        "/drafts/{draft_id}/confirm",
+        response_model=TripState,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def confirm_draft(draft_id: str, body: DraftConfirmationInput) -> TripState:
+        try:
+            trip = await intake_service.confirm(
+                draft_id,
+                body.confirmed_fields,
+                body.request_id,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="Draft not found.") from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+        try:
+            return repository.get(trip.id)
+        except KeyError:
+            repository.create(trip)
+            return trip
 
     @router.post("/trips", response_model=TripState, status_code=status.HTTP_201_CREATED)
     def create_trip(trip: TripState) -> TripState:

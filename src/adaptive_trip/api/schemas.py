@@ -28,3 +28,10 @@ class DraftInput(BaseModel):
 
     text: str
     preferences: dict[str, object] = Field(default_factory=dict)
+
+
+class DraftConfirmationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    confirmed_fields: dict[str, object]
+    request_id: str = Field(min_length=1)

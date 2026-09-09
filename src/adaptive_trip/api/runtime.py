@@ -48,7 +48,7 @@ def build_app(*, settings=None, transport=None, clock=None):
         model = ScriptedGateway([])
     repository = Repository(Path(configuration.get('APP_DATA_DIR', '.local')) / 'trip.db')
     replanner = Replanner(model, tools)
-    app = create_app(repository, replanner=replanner, clock=active_clock)
+    app = create_app(repository, replanner=replanner, clock=active_clock, tools=tools)
     interval_seconds = int(configuration.get('MONITOR_INTERVAL_SECONDS', '1800'))
     if interval_seconds < 1:
         raise ValueError('MONITOR_INTERVAL_SECONDS must be positive')

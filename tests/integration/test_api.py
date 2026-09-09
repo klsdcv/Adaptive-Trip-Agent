@@ -5,6 +5,7 @@ from datetime import timedelta
 from fastapi.testclient import TestClient
 
 from adaptive_trip.domain.models import Candidate, Observation, PlacesData, RouteData
+from adaptive_trip.tools.contracts import ToolResult
 
 
 def test_create_and_get_trip_over_http(tmp_path, scenario) -> None:
@@ -46,6 +47,77 @@ def test_text_itinerary_creates_an_unconfirmed_draft(tmp_path) -> None:
     assert response.status_code == 201
     assert response.json()["confirmed"] is False
     assert response.json()["questions"]
+
+
+def test_unresolved_draft_cannot_be_confirmed(tmp_path) -> None:
+    from adaptive_trip.api.app import create_app
+    from adaptive_trip.storage.repository import Repository
+
+    with TestClient(create_app(Repository(tmp_path / "trip.db"))) as client:
+        draft = client.post(
+            "/api/drafts",
+            json={"text": "내일 미술관 갔다가 저녁", "preferences": {}},
+        ).json()
+        response = client.post(
+            f"/api/drafts/{draft['id']}/confirm",
+            json={"confirmed_fields": {}, "request_id": "draft-1"},
+        )
+
+    assert response.status_code == 422
+
+
+def test_confirmed_draft_resolves_and_persists_a_trip(tmp_path, scenario) -> None:
+    from adaptive_trip.api.app import create_app
+    from adaptive_trip.storage.repository import Repository
+
+    loaded = scenario("rain")
+
+    class PlaceTools:
+        async def call(self, request):
+            return ToolResult(
+                observation=Observation(
+                    id="resolved-place",
+                    kind="place",
+                    status="ok",
+                    observed_at=loaded.now,
+                    valid_until=loaded.now + timedelta(hours=1),
+                    source="test",
+                    data=PlacesData(place_id="ChIJ-confirmed-place"),
+                ),
+                attempts=1,
+            )
+
+    repository = Repository(tmp_path / "trip.db")
+    app = create_app(repository, tools=PlaceTools(), clock=lambda: loaded.now)
+    with TestClient(app) as client:
+        draft = client.post(
+            "/api/drafts",
+            json={"text": "오사카성 방문", "preferences": {"pace": "relaxed"}},
+        ).json()
+        confirmed = client.post(
+            f"/api/drafts/{draft['id']}/confirm",
+            json={
+                "request_id": "confirm-osaka",
+                "confirmed_fields": {
+                    "timezone": "Asia/Tokyo",
+                    "search_origin": {"latitude": 34.6937, "longitude": 135.5023},
+                    "items": [{
+                        "title": "오사카성",
+                        "place_query": "오사카성",
+                        "activity_type": "sightseeing",
+                        "start": "2026-09-10T10:00:00+09:00",
+                        "end": "2026-09-10T12:00:00+09:00",
+                        "fixed": False,
+                    }],
+                },
+            },
+        )
+        fetched = client.get(f"/api/trips/{confirmed.json()['id']}")
+
+    assert confirmed.status_code == 201
+    assert confirmed.json()["items"][0]["place_id"] == "ChIJ-confirmed-place"
+    assert fetched.status_code == 200
+    assert fetched.json() == confirmed.json()
 
 
 def test_accepting_a_proposal_over_http_updates_the_trip(tmp_path, scenario) -> None:
