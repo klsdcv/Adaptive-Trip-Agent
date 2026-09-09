@@ -279,3 +279,34 @@ async def test_candidate_validation_uses_observation_created_by_tool_call(scenar
     ).run(state, loaded.event, [], loaded.now)
 
     assert [item.id for item in result.proposal.candidates] == ["museum-plan"]
+
+
+@pytest.mark.asyncio
+async def test_replanner_retries_invalid_model_shape_within_call_limit(scenario) -> None:
+    from adaptive_trip.agent.contracts import AgentAction
+    from adaptive_trip.agent.gateway import ScriptedGateway
+    from adaptive_trip.agent.graph import Replanner
+    from adaptive_trip.tools.synthetic import SyntheticTools
+
+    loaded = scenario("rain")
+    candidates = [
+        _indoor_candidate(loaded, "synthetic:museum", "Museum"),
+        _indoor_candidate(loaded, "synthetic:market", "Market"),
+        _indoor_candidate(loaded, "synthetic:cafe", "Cafe"),
+    ]
+    observations = _confirmed_observations(loaded, candidates)
+    gateway = ScriptedGateway([
+        AgentAction(kind="stop", reason="invalid_model_response"),
+        AgentAction(
+            kind="candidates",
+            candidates=candidates,
+            reason="Valid retry.",
+        ),
+    ])
+
+    result = await Replanner(gateway, SyntheticTools(observations)).run(
+        loaded.state, loaded.event, observations, loaded.now
+    )
+
+    assert result.model_calls == 2
+    assert len(result.proposal.candidates) == 3

@@ -166,6 +166,12 @@ class Replanner:
                 return "call_tool"
             if isinstance(action, AgentAction) and action.kind == "candidates":
                 return "validate"
+            if (
+                isinstance(action, AgentAction)
+                and action.reason in {"invalid_model_response", "invalid_tool_request"}
+                and int(graph_state["model_calls"]) < self._max_model_calls
+            ):
+                return "retry"
             return "finish"
 
         def route_validation(graph_state: dict[str, object]):
@@ -186,7 +192,12 @@ class Replanner:
         workflow.add_conditional_edges(
             "decide",
             route_action,
-            {"call_tool": "call_tool", "validate": "validate", "finish": END},
+            {
+                "call_tool": "call_tool",
+                "validate": "validate",
+                "retry": "decide",
+                "finish": END,
+            },
         )
         workflow.add_edge("call_tool", "decide")
         workflow.add_conditional_edges(
