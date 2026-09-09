@@ -1,6 +1,7 @@
 """Local server entrypoint: uvicorn adaptive_trip.api.runtime:build_app --factory."""
+import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os
 
@@ -11,6 +12,7 @@ from fastapi import HTTPException
 from adaptive_trip.agent.gateway import LiveModelGateway, ScriptedGateway
 from adaptive_trip.agent.graph import Replanner
 from adaptive_trip.api.app import create_app
+from adaptive_trip.services.monitor import Monitor
 from adaptive_trip.storage.repository import Repository
 from adaptive_trip.tools.contracts import ToolProvider, ToolRequest, ToolResult
 from adaptive_trip.tools.google_places import GoogleTools
@@ -45,12 +47,45 @@ def build_app(*, settings=None, transport=None, clock=None):
         tools = SyntheticTools([])
         model = ScriptedGateway([])
     repository = Repository(Path(configuration.get('APP_DATA_DIR', '.local')) / 'trip.db')
-    app = create_app(repository, replanner=Replanner(model, tools), clock=active_clock)
+    replanner = Replanner(model, tools)
+    app = create_app(repository, replanner=replanner, clock=active_clock)
+    interval_seconds = int(configuration.get('MONITOR_INTERVAL_SECONDS', '1800'))
+    if interval_seconds < 1:
+        raise ValueError('MONITOR_INTERVAL_SECONDS must be positive')
+    monitor = Monitor(
+        repository,
+        tools,
+        replanner=replanner,
+        clock=active_clock,
+        check_interval=timedelta(seconds=interval_seconds),
+    )
+
+    async def monitor_loop(stop: asyncio.Event) -> None:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
+            except TimeoutError:
+                try:
+                    await monitor.tick()
+                except (httpx.RequestError, ValueError):
+                    continue
 
     @asynccontextmanager
     async def lifespan(app):
+        stop = asyncio.Event()
+        task: asyncio.Task | None = None
         async with client:
-            yield
+            try:
+                try:
+                    await monitor.tick()
+                except (httpx.RequestError, ValueError):
+                    pass
+                task = asyncio.create_task(monitor_loop(stop))
+                yield
+            finally:
+                stop.set()
+                if task is not None:
+                    await task
 
     app.router.lifespan_context = lifespan
 

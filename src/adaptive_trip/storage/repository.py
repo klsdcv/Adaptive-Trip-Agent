@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from adaptive_trip.domain.models import (
@@ -45,6 +46,36 @@ class Repository:
             if (state := TripState.model_validate_json(row["state_json"])).travel_mode
         ]
 
+    def active_due_trips(self, now: datetime) -> list[TripState]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT trips.state_json, monitor_schedule.next_check_at
+                FROM trips
+                LEFT JOIN monitor_schedule ON monitor_schedule.trip_id = trips.id
+                """
+            ).fetchall()
+        due: list[TripState] = []
+        for row in rows:
+            state = TripState.model_validate_json(row["state_json"])
+            next_check_at = row["next_check_at"]
+            if state.travel_mode and (
+                next_check_at is None or datetime.fromisoformat(next_check_at) <= now
+            ):
+                due.append(state)
+        return due
+
+    def update_next_check(self, trip_id: str, at: datetime) -> None:
+        with self._transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO monitor_schedule (trip_id, next_check_at)
+                VALUES (?, ?)
+                ON CONFLICT(trip_id) DO UPDATE SET next_check_at = excluded.next_check_at
+                """,
+                (trip_id, at.isoformat()),
+            )
+
     def compare_and_swap(self, state: TripState, *, expected_version: int) -> bool:
         with self._transaction() as connection:
             cursor = connection.execute(
@@ -67,6 +98,14 @@ class Repository:
             except sqlite3.IntegrityError:
                 return False
             return True
+
+    def events(self, trip_id: str) -> list[ChangeEvent]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT event_json FROM events WHERE trip_id = ? ORDER BY created_at, id",
+                (trip_id,),
+            ).fetchall()
+        return [ChangeEvent.model_validate_json(row["event_json"]) for row in rows]
 
     def save_proposal(self, proposal: Proposal) -> None:
         with self._connect() as connection:

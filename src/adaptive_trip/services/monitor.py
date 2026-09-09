@@ -20,6 +20,7 @@ class Monitor:
         replanner: Replanner | None = None,
         rain_probability_threshold: int = 60,
         impact_window: timedelta = timedelta(minutes=60),
+        check_interval: timedelta = timedelta(minutes=30),
     ) -> None:
         self._repository = repository
         self._tools = tools
@@ -27,32 +28,37 @@ class Monitor:
         self._replanner = replanner
         self._rain_probability_threshold = rain_probability_threshold
         self._impact_window = impact_window
+        self._check_interval = check_interval
 
     async def tick(self) -> list[str]:
         now = self._clock()
         created_event_ids: list[str] = []
-        for trip in self._repository.active_trips():
-            if trip.position is None:
-                continue
-            weather = await self._tools.call(
-                ToolRequest(
-                    name="weather",
-                    arguments={
-                        "latitude": trip.position.latitude,
-                        "longitude": trip.position.longitude,
-                    },
-                    sku="weather",
-                    units=1,
+        for trip in self._repository.active_due_trips(now):
+            try:
+                if trip.position is None:
+                    continue
+                weather = await self._tools.call(
+                    ToolRequest(
+                        name="weather",
+                        arguments={
+                            "latitude": trip.position.latitude,
+                            "longitude": trip.position.longitude,
+                            "forecast_at": now.isoformat(),
+                        },
+                        sku="weather",
+                        units=1,
+                    )
                 )
-            )
-            event = self._weather_impact_event(trip, weather.observation, now)
-            if event is None or not self._repository.save_event(event):
-                continue
-            created_event_ids.append(event.id)
-            if self._replanner is not None:
-                result = await self._replanner.run(trip, event, [weather.observation], now)
-                if result.proposal is not None:
-                    self._repository.save_proposal(result.proposal)
+                event = self._weather_impact_event(trip, weather.observation, now)
+                if event is None or not self._repository.save_event(event):
+                    continue
+                created_event_ids.append(event.id)
+                if self._replanner is not None:
+                    result = await self._replanner.run(trip, event, [weather.observation], now)
+                    if result.proposal is not None:
+                        self._repository.save_proposal(result.proposal)
+            finally:
+                self._repository.update_next_check(trip.id, now + self._check_interval)
         return created_event_ids
 
     def _weather_impact_event(

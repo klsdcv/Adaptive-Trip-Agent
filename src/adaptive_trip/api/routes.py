@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from adaptive_trip.agent.graph import Replanner
 from adaptive_trip.api.schemas import DecisionInput, DraftInput, ReplanInput
-from adaptive_trip.domain.models import Proposal, TripState
+from adaptive_trip.domain.models import ChangeEvent, Proposal, TripState
 from adaptive_trip.services.decisions import DecisionService
 from adaptive_trip.services.intake import Draft, IntakeService
 from adaptive_trip.storage.repository import Repository
@@ -54,6 +54,14 @@ def build_router(
         except KeyError as error:
             raise HTTPException(status_code=404, detail="Trip not found.") from error
         return repository.pending_proposals(trip_id)
+
+    @router.get("/trips/{trip_id}/notifications", response_model=list[ChangeEvent])
+    def get_notifications(trip_id: str) -> list[ChangeEvent]:
+        try:
+            repository.get(trip_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="Trip not found.") from error
+        return repository.events(trip_id)
 
     @router.post("/trips/{trip_id}/decisions")
     async def decide(trip_id: str, body: DecisionInput):

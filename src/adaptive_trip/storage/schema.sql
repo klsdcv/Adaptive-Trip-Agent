@@ -17,6 +17,11 @@ CREATE TABLE IF NOT EXISTS events (
     UNIQUE (trip_id, fingerprint)
 );
 
+CREATE TABLE IF NOT EXISTS monitor_schedule (
+    trip_id TEXT PRIMARY KEY REFERENCES trips(id) ON DELETE CASCADE,
+    next_check_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS proposals (
     id TEXT PRIMARY KEY,
     trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
