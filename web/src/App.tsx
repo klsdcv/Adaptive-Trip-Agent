@@ -4,8 +4,9 @@ import { tripApi } from "./api";
 import { Feedback } from "./features/feedback/Feedback";
 import { Intake } from "./features/intake/Intake";
 import { Timeline } from "./features/itinerary/Timeline";
+import { WeatherNotice } from "./features/notifications/WeatherNotice";
 import { ProposalList } from "./features/proposals/ProposalList";
-import type { Draft, Proposal, TripState } from "./types";
+import type { ChangeEvent, Draft, Proposal, TripState } from "./types";
 
 function candidateTitle(index: number, candidate: { items: { title: string }[] }) {
   return candidate.items[0]?.title || `대안 ${index + 1}`;
@@ -15,6 +16,7 @@ export default function App() {
   const [tripId, setTripId] = useState("");
   const [trip, setTrip] = useState<TripState | null>(null);
   const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [notification, setNotification] = useState<ChangeEvent | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
@@ -23,7 +25,12 @@ export default function App() {
   useEffect(() => {
     if (!tripId) return;
     const timer = window.setInterval(() => {
-      tripApi.getProposals(tripId).then((items) => setProposal(items[0] ?? null)).catch(() => undefined);
+      Promise.all([tripApi.getProposals(tripId), tripApi.getNotifications(tripId)])
+        .then(([proposals, notifications]) => {
+          setProposal(proposals[0] ?? null);
+          setNotification(notifications.at(-1) ?? null);
+        })
+        .catch(() => undefined);
     }, 5000);
     return () => window.clearInterval(timer);
   }, [tripId]);
@@ -45,8 +52,15 @@ export default function App() {
     if (!tripId.trim()) return;
     setLoading(true); setError("");
     try {
-      const [loadedTrip, proposals] = await Promise.all([tripApi.getTrip(tripId), tripApi.getProposals(tripId)]);
-      setTrip(loadedTrip); setProposal(proposals[0] ?? null); setNotice("여행 상태를 불러왔습니다.");
+      const [loadedTrip, proposals, notifications] = await Promise.all([
+        tripApi.getTrip(tripId),
+        tripApi.getProposals(tripId),
+        tripApi.getNotifications(tripId),
+      ]);
+      setTrip(loadedTrip);
+      setProposal(proposals[0] ?? null);
+      setNotification(notifications.at(-1) ?? null);
+      setNotice("여행 상태를 불러왔습니다.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "여행을 불러오지 못했습니다."); }
     finally { setLoading(false); }
   }
@@ -67,6 +81,7 @@ export default function App() {
     <Intake onSubmit={prepareDraft} loading={loading} />
     {notice && <p className="notice" role="status">{notice}</p>}{error && <p className="error" role="alert">{error}</p>}
     {draft && <section className="draft"><h2>일정 초안</h2><p>{draft.source_text}</p>{draft.questions.map((question) => <p key={question}>확인: {question}</p>)}</section>}
+    {trip && notification && <WeatherNotice event={notification} items={trip.items} />}
     {trip && <Timeline items={trip.items} />}
     {proposal && <ProposalList proposal={{ id: proposal.id, reason: proposal.reason, candidates: candidateViews }} onAccept={(id) => decide(id, "accept")} onReject={() => decide(null, "reject")} onRefine={() => setNotice("원하는 조건을 상태 입력란에 추가해 주세요.")} />}
     {trip && <Feedback onSend={(message) => setNotice(`상태 입력을 받았습니다: ${message}`)} />}

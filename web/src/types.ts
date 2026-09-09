@@ -51,6 +51,16 @@ export interface Proposal {
   reason: string;
 }
 
+export interface ChangeEvent {
+  id: string;
+  trip_id: string;
+  kind: "weather" | "delay" | "closed" | "preference" | "position" | "expense";
+  at: string;
+  affected_item_ids: string[];
+  payload: Record<string, unknown>;
+  fingerprint: string;
+}
+
 export interface TripState {
   id: string;
   version: number;

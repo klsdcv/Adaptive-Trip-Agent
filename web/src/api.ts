@@ -1,4 +1,4 @@
-import type { DecisionResult, Draft, Proposal, TripState } from "./types";
+import type { ChangeEvent, DecisionResult, Draft, Proposal, TripState } from "./types";
 
 const baseUrl = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -15,6 +15,7 @@ export const tripApi = {
   createDraft: (text: string) => request<Draft>("/drafts", { method: "POST", body: JSON.stringify({ text, preferences: {} }) }),
   getTrip: (tripId: string) => request<TripState>(`/trips/${encodeURIComponent(tripId)}`),
   getProposals: (tripId: string) => request<Proposal[]>(`/trips/${encodeURIComponent(tripId)}/proposals`),
+  getNotifications: (tripId: string) => request<ChangeEvent[]>(`/trips/${encodeURIComponent(tripId)}/notifications`),
   decide: (tripId: string, proposalId: string, candidateId: string | null, action: "accept" | "reject") =>
     request<DecisionResult>(`/trips/${encodeURIComponent(tripId)}/decisions`, {
       method: "POST",
