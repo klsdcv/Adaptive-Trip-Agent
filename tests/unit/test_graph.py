@@ -104,3 +104,60 @@ async def test_replan_keeps_original_and_offers_three_valid_alternatives(scenari
     assert len(result.proposal.candidates) == 3
     assert all(report.eligible for report in result.proposal.reports.values())
     assert loaded.state.model_dump_json() == original
+
+
+@pytest.mark.asyncio
+async def test_replanner_executes_requested_tool_and_returns_evidence_to_model(scenario) -> None:
+    from adaptive_trip.agent.contracts import AgentAction
+    from adaptive_trip.agent.graph import Replanner
+    from adaptive_trip.tools.contracts import ToolRequest
+    from adaptive_trip.tools.synthetic import SyntheticTools
+
+    loaded = scenario("rain")
+    observation = Observation(
+        id="details-museum",
+        kind="place",
+        status="ok",
+        observed_at=loaded.now,
+        valid_until=loaded.now + timedelta(hours=1),
+        source="synthetic",
+        data=PlacesData(
+            place_id="synthetic:museum",
+            opening_intervals=[
+                (loaded.state.items[1].start, loaded.state.items[1].end)
+            ],
+        ),
+    )
+
+    class RecordingGateway:
+        def __init__(self) -> None:
+            self.contexts: list[dict[str, object]] = []
+            self.actions = iter(
+                [
+                    AgentAction(
+                        kind="tool",
+                        request=ToolRequest(
+                            name="place_details",
+                            arguments={"place_id": "synthetic:museum"},
+                            sku="places_details",
+                            units=1,
+                        ),
+                        reason="Confirm opening hours.",
+                    ),
+                    AgentAction(kind="stop", reason="Evidence collected."),
+                ]
+            )
+
+        async def next(self, context: dict[str, object]) -> AgentAction:
+            self.contexts.append(context)
+            return next(self.actions)
+
+    gateway = RecordingGateway()
+    result = await Replanner(gateway, SyntheticTools([observation])).run(
+        loaded.state, loaded.event, [], loaded.now
+    )
+
+    assert result.model_calls == 2
+    assert result.tool_calls == 1
+    assert [item.id for item in result.observations] == ["details-museum"]
+    assert gateway.contexts[1]["observations"][0]["id"] == "details-museum"
