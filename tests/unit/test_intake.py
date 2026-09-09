@@ -150,3 +150,46 @@ async def test_confirm_is_idempotent_for_the_same_request_id() -> None:
 
     assert second == first
     assert tools.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_confirm_interprets_naive_form_times_in_the_trip_timezone() -> None:
+    from adaptive_trip.services.intake import IntakeService
+
+    now = datetime(2026, 9, 9, tzinfo=timezone.utc)
+
+    class PlaceTools:
+        async def call(self, request):
+            return ToolResult(
+                observation=Observation(
+                    id="place-local-time",
+                    kind="place",
+                    status="ok",
+                    observed_at=now,
+                    valid_until=now + timedelta(hours=1),
+                    source="test",
+                    data=PlacesData(place_id="google-place-local-time"),
+                ),
+                attempts=1,
+            )
+
+    service = IntakeService(tools=PlaceTools(), clock=lambda: now)
+    draft = await service.prepare("오사카성", {})
+    trip = await service.confirm(
+        draft.id,
+        {
+            "timezone": "Asia/Tokyo",
+            "search_origin": {"latitude": 34.6937, "longitude": 135.5023},
+            "items": [{
+                "title": "오사카성",
+                "place_query": "오사카성",
+                "activity_type": "sightseeing",
+                "start": "2026-09-10T10:00",
+                "end": "2026-09-10T12:00",
+                "fixed": False,
+            }],
+        },
+        request_id="local-time",
+    )
+
+    assert trip.items[0].start.isoformat() == "2026-09-10T10:00:00+09:00"

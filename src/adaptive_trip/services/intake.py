@@ -4,8 +4,9 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from adaptive_trip.domain.models import Constraints, Coordinates, Item, PlacesData, TripState
 from adaptive_trip.tools.contracts import ToolProvider, ToolRequest
@@ -32,8 +33,8 @@ class DraftItemInput(BaseModel):
     title: str = Field(min_length=1)
     place_query: str = Field(min_length=1)
     activity_type: str = Field(min_length=1)
-    start: AwareDatetime
-    end: AwareDatetime
+    start: datetime
+    end: datetime
     fixed: bool
     rain_sensitive: bool = False
 
@@ -91,6 +92,10 @@ class IntakeService:
             raise KeyError(draft_id)
 
         fields = ConfirmedDraftFields.model_validate(confirmed_fields)
+        try:
+            trip_timezone = ZoneInfo(fields.timezone)
+        except ZoneInfoNotFoundError as error:
+            raise ValueError("timezone must be a valid IANA timezone") from error
         if self._tools is None:
             raise RuntimeError("Place lookup is unavailable.")
 
@@ -111,14 +116,16 @@ class IntakeService:
             observation = result.observation
             if observation.status != "ok" or not isinstance(observation.data, PlacesData):
                 raise ValueError(f"place could not be resolved: {item.place_query}")
+            start = item.start if item.start.tzinfo is not None else item.start.replace(tzinfo=trip_timezone)
+            end = item.end if item.end.tzinfo is not None else item.end.replace(tzinfo=trip_timezone)
             resolved_items.append(
                 Item(
                     id=str(uuid4()),
                     place_id=observation.data.place_id,
                     title=item.title,
                     activity_type=item.activity_type,
-                    start=item.start,
-                    end=item.end,
+                    start=start,
+                    end=end,
                     status="pending",
                     fixed=item.fixed,
                     rain_sensitive=item.rain_sensitive,

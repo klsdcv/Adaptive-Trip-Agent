@@ -78,6 +78,20 @@ export interface Draft {
   confirmed: boolean;
 }
 
+export interface ConfirmedDraftFields {
+  timezone: string;
+  search_origin: { latitude: number; longitude: number };
+  items: Array<{
+    title: string;
+    place_query: string;
+    activity_type: string;
+    start: string;
+    end: string;
+    fixed: boolean;
+    rain_sensitive: boolean;
+  }>;
+}
+
 export interface DecisionResult {
   status: "applied" | "rejected" | "stale" | "needs_confirmation" | "invalid";
   state: TripState;

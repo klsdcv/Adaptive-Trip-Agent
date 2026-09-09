@@ -8,10 +8,13 @@ main { max-width: 1100px; padding: 2rem 1rem 4rem; margin: auto; display: grid; 
 .load-trip, .intake, .draft, .timeline, .feedback, .proposal-section, .weather-notice { background: #fff; border-radius: 1rem; padding: 1.25rem; box-shadow: 0 4px 22px #17201712; }
 .load-trip { display: flex; align-items: end; gap: .75rem; } .load-trip label { flex-basis: 100%; } input, textarea { width: 100%; border: 1px solid #bfc9bd; border-radius: .55rem; padding: .65rem; }
 .intake { display: grid; gap: .65rem; } .intake textarea { resize: vertical; }
+.draft-fields { display: grid; gap: .75rem; margin-top: 1rem; } .draft-fields label { display: grid; gap: .35rem; font-weight: 650; }
+.coordinate-fields, .time-fields, .check-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.check-fields label { display: flex; align-items: center; gap: .5rem; font-weight: 500; } .check-fields input { width: auto; }
 .notice { color: #07563b; } .error, [role="alert"] { color: #ae2d2d; }
 .weather-notice { border-left: .4rem solid #df8b2c; background: #fff8e8; color: #52300b; } .weather-notice h2, .weather-notice p { margin: .25rem 0; }
 .timeline ol { padding: 0; list-style: none; display: grid; gap: .8rem; } .timeline li { display: flex; gap: 1rem; padding-left: 1rem; border-left: 3px solid #72b69c; } .timeline time { min-width: 3.5rem; font-weight: 700; } .timeline span { display: block; color: #58635b; font-size: .9rem; }
 .proposal-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0; } .proposal-card { border: 1px solid #dce4d9; border-radius: .8rem; padding: 1rem; display: flex; flex-direction: column; gap: .75rem; } .proposal-card h3, .proposal-card p { margin: 0; } .proposal-card button { margin-top: auto; }
 .proposal-card ul { padding-left: 0; list-style: none; font-size: .9rem; } .check { margin: .35rem 0; } .check-pass { color: #0c6b4b; } .check-fail { color: #ae2d2d; } .check-unknown { color: #7d5100; } .proposal-actions, .quick-actions, .feedback-input { display: flex; gap: .65rem; flex-wrap: wrap; }
 .feedback { display: grid; gap: .75rem; } .feedback h2 { margin: 0; }.feedback-input input { flex: 1; }
-@media (max-width: 700px) { main { padding: 1rem .75rem 3rem; } .hero { padding: 1.5rem; } .proposal-grid { grid-template-columns: 1fr; } .load-trip { align-items: stretch; flex-wrap: wrap; } .load-trip label { flex-basis: 100%; } .load-trip input { flex: 1; } }
+@media (max-width: 700px) { main { padding: 1rem .75rem 3rem; } .hero { padding: 1.5rem; } .proposal-grid, .coordinate-fields, .time-fields, .check-fields { grid-template-columns: 1fr; } .load-trip { align-items: stretch; flex-wrap: wrap; } .load-trip label { flex-basis: 100%; } .load-trip input { flex: 1; } }

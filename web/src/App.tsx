@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { tripApi } from "./api";
 import { Feedback } from "./features/feedback/Feedback";
+import { DraftConfirmation } from "./features/intake/DraftConfirmation";
 import { Intake } from "./features/intake/Intake";
 import { Timeline } from "./features/itinerary/Timeline";
 import { WeatherNotice } from "./features/notifications/WeatherNotice";
 import { ProposalList } from "./features/proposals/ProposalList";
-import type { ChangeEvent, Draft, Proposal, TripState } from "./types";
+import type { ChangeEvent, ConfirmedDraftFields, Draft, Proposal, TripState } from "./types";
 
 function candidateTitle(index: number, candidate: { items: { title: string }[] }) {
   return candidate.items[0]?.title || `대안 ${index + 1}`;
@@ -65,6 +66,17 @@ export default function App() {
     finally { setLoading(false); }
   }
 
+  async function confirmDraft(fields: ConfirmedDraftFields) {
+    if (!draft) return;
+    setLoading(true); setError("");
+    try {
+      const confirmedTrip = await tripApi.confirmDraft(draft.id, fields);
+      setTrip(confirmedTrip); setTripId(confirmedTrip.id); setDraft(null);
+      setNotice("장소를 확인하고 여행 일정을 확정했습니다.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "여행을 확정하지 못했습니다."); }
+    finally { setLoading(false); }
+  }
+
   async function decide(candidateId: string | null, action: "accept" | "reject") {
     if (!proposal || !trip) return;
     setLoading(true); setError("");
@@ -80,7 +92,7 @@ export default function App() {
     <section className="load-trip" aria-label="기존 여행 불러오기"><label htmlFor="trip-id">기존 여행 ID</label><input id="trip-id" value={tripId} onChange={(event) => setTripId(event.target.value)} /><button type="button" onClick={loadTrip} disabled={loading}>불러오기</button></section>
     <Intake onSubmit={prepareDraft} loading={loading} />
     {notice && <p className="notice" role="status">{notice}</p>}{error && <p className="error" role="alert">{error}</p>}
-    {draft && <section className="draft"><h2>일정 초안</h2><p>{draft.source_text}</p>{draft.questions.map((question) => <p key={question}>확인: {question}</p>)}</section>}
+    {draft && <DraftConfirmation key={draft.id} draft={draft} loading={loading} onConfirm={confirmDraft} />}
     {trip && notification && <WeatherNotice event={notification} items={trip.items} />}
     {trip && <Timeline items={trip.items} />}
     {proposal && <ProposalList proposal={{ id: proposal.id, reason: proposal.reason, candidates: candidateViews }} onAccept={(id) => decide(id, "accept")} onReject={() => decide(null, "reject")} onRefine={() => setNotice("원하는 조건을 상태 입력란에 추가해 주세요.")} />}
