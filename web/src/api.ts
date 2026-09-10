@@ -25,6 +25,7 @@ export const tripApi = {
       body: JSON.stringify({ confirmed_fields: confirmedFields, request_id: crypto.randomUUID() }),
     }),
   getTrip: (tripId: string) => request<TripState>(`/trips/${encodeURIComponent(tripId)}`),
+  getRun: (runId: string) => request<RunStatus>(`/runs/${encodeURIComponent(runId)}`),
   getProposals: (tripId: string) => request<Proposal[]>(`/trips/${encodeURIComponent(tripId)}/proposals`),
   getNotifications: (tripId: string) => request<ChangeEvent[]>(`/trips/${encodeURIComponent(tripId)}/notifications`),
   decide: (tripId: string, proposalId: string, candidateId: string | null, action: "accept" | "reject") =>

@@ -7,7 +7,7 @@ import { Intake } from "./features/intake/Intake";
 import { Timeline } from "./features/itinerary/Timeline";
 import { WeatherNotice } from "./features/notifications/WeatherNotice";
 import { ProposalList } from "./features/proposals/ProposalList";
-import type { ChangeEvent, ConfirmedDraftFields, Draft, Proposal, TripState, UserEventInput } from "./types";
+import type { ChangeEvent, ConfirmedDraftFields, Draft, Proposal, RunStatus, TripState, UserEventInput } from "./types";
 
 function candidateTitle(index: number, candidate: { items: { title: string }[] }) {
   return candidate.items[0]?.title || `대안 ${index + 1}`;
@@ -22,6 +22,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [runStatus, setRunStatus] = useState<RunStatus | null>(null);
 
   useEffect(() => {
     if (!tripId) return;
@@ -35,6 +36,29 @@ export default function App() {
     }, 5000);
     return () => window.clearInterval(timer);
   }, [tripId]);
+
+  useEffect(() => {
+    if (!runStatus || (runStatus.status !== "pending" && runStatus.status !== "completed")) return;
+    if (runStatus.status === "completed") return;
+    const timer = window.setInterval(async () => {
+      try {
+        const next = await tripApi.getRun(runStatus.run_id);
+        setRunStatus(next);
+        if (next.status !== "pending") {
+          const [loadedTrip, proposals] = await Promise.all([
+            tripApi.getTrip(next.trip_id),
+            tripApi.getProposals(next.trip_id),
+          ]);
+          setTrip(loadedTrip);
+          setProposal(proposals[0] ?? null);
+          setNotice(next.status === "failed" ? "상태는 저장됐지만 재계획에 실패했습니다." : "새 재계획 제안을 준비했습니다.");
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "재계획 상태를 확인하지 못했습니다.");
+      }
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [runStatus]);
 
   const candidateViews = useMemo(() => proposal?.candidates.map((candidate, index) => ({
     ...candidate,
@@ -93,8 +117,10 @@ export default function App() {
     setLoading(true); setError("");
     try {
       const run = await tripApi.sendEvent(trip.id, event, trip.version);
+      setRunStatus(run);
       setTrip(await tripApi.getTrip(trip.id));
-      setNotice(run.status === "failed" ? "상태는 저장됐지만 재계획에 실패했습니다." : `${event.message} 상태를 반영했습니다.`);
+      if (run.status === "completed") setProposal((await tripApi.getProposals(trip.id))[0] ?? null);
+      setNotice(run.status === "pending" ? `${event.message} 상태를 반영하고 재계획 중입니다.` : run.status === "failed" ? "상태는 저장됐지만 재계획에 실패했습니다." : `${event.message} 상태를 반영했습니다.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "상태를 반영하지 못했습니다. 최신 상태를 확인해 주세요."); }
     finally { setLoading(false); }
   }
