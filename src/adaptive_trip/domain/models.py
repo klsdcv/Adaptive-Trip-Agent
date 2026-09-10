@@ -138,7 +138,17 @@ class ChangeEvent(BaseModel):
 
     id: str
     trip_id: str
-    kind: Literal["weather", "delay", "closed", "preference", "position", "expense"]
+    kind: Literal[
+        "weather",
+        "delay",
+        "closed",
+        "completion",
+        "fatigue",
+        "fixed",
+        "preference",
+        "position",
+        "expense",
+    ]
     at: AwareDatetime
     affected_item_ids: tuple[str, ...] = ()
     payload: dict[str, Any] = Field(default_factory=dict)

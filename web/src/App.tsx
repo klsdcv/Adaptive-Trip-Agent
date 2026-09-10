@@ -7,7 +7,7 @@ import { Intake } from "./features/intake/Intake";
 import { Timeline } from "./features/itinerary/Timeline";
 import { WeatherNotice } from "./features/notifications/WeatherNotice";
 import { ProposalList } from "./features/proposals/ProposalList";
-import type { ChangeEvent, ConfirmedDraftFields, Draft, Proposal, TripState } from "./types";
+import type { ChangeEvent, ConfirmedDraftFields, Draft, Proposal, TripState, UserEventInput } from "./types";
 
 function candidateTitle(index: number, candidate: { items: { title: string }[] }) {
   return candidate.items[0]?.title || `대안 ${index + 1}`;
@@ -29,7 +29,7 @@ export default function App() {
       Promise.all([tripApi.getProposals(tripId), tripApi.getNotifications(tripId)])
         .then(([proposals, notifications]) => {
           setProposal(proposals[0] ?? null);
-          setNotification(notifications.at(-1) ?? null);
+          setNotification(notifications.filter((event) => event.kind === "weather").at(-1) ?? null);
         })
         .catch(() => undefined);
     }, 5000);
@@ -60,7 +60,7 @@ export default function App() {
       ]);
       setTrip(loadedTrip);
       setProposal(proposals[0] ?? null);
-      setNotification(notifications.at(-1) ?? null);
+      setNotification(notifications.filter((event) => event.kind === "weather").at(-1) ?? null);
       setNotice("여행 상태를 불러왔습니다.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "여행을 불러오지 못했습니다."); }
     finally { setLoading(false); }
@@ -88,14 +88,33 @@ export default function App() {
     finally { setLoading(false); }
   }
 
+  async function sendStatus(event: UserEventInput) {
+    if (!trip) return;
+    setLoading(true); setError("");
+    try {
+      const run = await tripApi.sendEvent(trip.id, event, trip.version);
+      setTrip(await tripApi.getTrip(trip.id));
+      setNotice(run.status === "failed" ? "상태는 저장됐지만 재계획에 실패했습니다." : `${event.message} 상태를 반영했습니다.`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "상태를 반영하지 못했습니다. 최신 상태를 확인해 주세요."); }
+    finally { setLoading(false); }
+  }
+
+  async function toggleTravelMode() {
+    if (!trip) return;
+    setLoading(true); setError("");
+    try { setTrip(await tripApi.setMode(trip.id, !trip.travel_mode, trip.version)); setNotice(trip.travel_mode ? "여행 모드를 껐습니다." : "여행 모드를 켰습니다."); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "여행 모드를 변경하지 못했습니다."); }
+    finally { setLoading(false); }
+  }
+
   return <main><header className="hero"><p className="eyebrow">ADAPTIVE TRIP</p><h1>변화에도 이어지는 여행</h1><p>확정된 일정은 건드리지 않고, 검증된 대안을 먼저 비교합니다.</p></header>
     <section className="load-trip" aria-label="기존 여행 불러오기"><label htmlFor="trip-id">기존 여행 ID</label><input id="trip-id" value={tripId} onChange={(event) => setTripId(event.target.value)} /><button type="button" onClick={loadTrip} disabled={loading}>불러오기</button></section>
     <Intake onSubmit={prepareDraft} loading={loading} />
     {notice && <p className="notice" role="status">{notice}</p>}{error && <p className="error" role="alert">{error}</p>}
     {draft && <DraftConfirmation key={draft.id} draft={draft} loading={loading} onConfirm={confirmDraft} />}
     {trip && notification && <WeatherNotice event={notification} items={trip.items} />}
-    {trip && <Timeline items={trip.items} />}
+    {trip && <><section className="trip-controls" aria-label="여행 모드"><p>여행 모드: <strong>{trip.travel_mode ? "켜짐" : "꺼짐"}</strong></p><button type="button" onClick={toggleTravelMode} disabled={loading}>{trip.travel_mode ? "여행 모드 끄기" : "여행 모드 켜기"}</button></section><Timeline items={trip.items} /></>}
     {proposal && <ProposalList proposal={{ id: proposal.id, reason: proposal.reason, candidates: candidateViews }} onAccept={(id) => decide(id, "accept")} onReject={() => decide(null, "reject")} onRefine={() => setNotice("원하는 조건을 상태 입력란에 추가해 주세요.")} />}
-    {trip && <Feedback onSend={(message) => setNotice(`상태 입력을 받았습니다: ${message}`)} />}
+    {trip && <Feedback onSend={sendStatus} />}
   </main>;
 }

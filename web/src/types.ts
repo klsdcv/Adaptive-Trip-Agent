@@ -54,11 +54,27 @@ export interface Proposal {
 export interface ChangeEvent {
   id: string;
   trip_id: string;
-  kind: "weather" | "delay" | "closed" | "preference" | "position" | "expense";
+  kind: "weather" | "delay" | "closed" | "completion" | "fatigue" | "fixed" | "preference" | "position" | "expense";
   at: string;
   affected_item_ids: string[];
   payload: Record<string, unknown>;
   fingerprint: string;
+}
+
+export type UserEventKind = ChangeEvent["kind"];
+
+export interface UserEventInput {
+  message: string;
+  kind: UserEventKind;
+  payload: Record<string, unknown>;
+}
+
+export interface RunStatus {
+  run_id: string;
+  trip_id: string;
+  status: "pending" | "completed" | "failed";
+  proposal_id: string | null;
+  error: string | null;
 }
 
 export interface TripState {

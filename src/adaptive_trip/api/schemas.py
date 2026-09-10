@@ -23,6 +23,36 @@ class ReplanInput(BaseModel):
     observations: list[Observation]
 
 
+class EventInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[
+        "weather", "delay", "closed", "completion", "fatigue", "fixed",
+        "preference", "position", "expense",
+    ]
+    payload: dict[str, object] = Field(default_factory=dict)
+    expected_version: int = Field(ge=0)
+    request_id: str = Field(min_length=1)
+
+
+class ModeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    expected_version: int = Field(ge=0)
+    request_id: str = Field(min_length=1)
+
+
+class RunStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    trip_id: str
+    status: Literal["pending", "completed", "failed"]
+    proposal_id: str | None = None
+    error: str | None = None
+
+
 class DraftInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

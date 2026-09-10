@@ -1,4 +1,4 @@
-import type { ChangeEvent, ConfirmedDraftFields, DecisionResult, Draft, Proposal, TripState } from "./types";
+import type { ChangeEvent, ConfirmedDraftFields, DecisionResult, Draft, Proposal, RunStatus, TripState, UserEventInput } from "./types";
 
 const baseUrl = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -31,5 +31,20 @@ export const tripApi = {
     request<DecisionResult>(`/trips/${encodeURIComponent(tripId)}/decisions`, {
       method: "POST",
       body: JSON.stringify({ proposal_id: proposalId, candidate_id: candidateId, action, request_id: crypto.randomUUID() }),
+    }),
+  sendEvent: (tripId: string, event: UserEventInput, expectedVersion: number) =>
+    request<RunStatus>(`/trips/${encodeURIComponent(tripId)}/events`, {
+      method: "POST",
+      body: JSON.stringify({
+        kind: event.kind,
+        payload: event.payload,
+        expected_version: expectedVersion,
+        request_id: crypto.randomUUID(),
+      }),
+    }),
+  setMode: (tripId: string, enabled: boolean, expectedVersion: number) =>
+    request<TripState>(`/trips/${encodeURIComponent(tripId)}/mode`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled, expected_version: expectedVersion, request_id: crypto.randomUUID() }),
     }),
 };

@@ -120,6 +120,104 @@ def test_confirmed_draft_resolves_and_persists_a_trip(tmp_path, scenario) -> Non
     assert fetched.json() == confirmed.json()
 
 
+def test_travel_mode_can_be_toggled_with_versioned_request(tmp_path, scenario) -> None:
+    from adaptive_trip.api.app import create_app
+    from adaptive_trip.storage.repository import Repository
+
+    loaded = scenario("rain")
+    repository = Repository(tmp_path / "trip.db")
+    repository.create(loaded.state)
+
+    with TestClient(create_app(repository, clock=lambda: loaded.now)) as client:
+        response = client.patch(
+            f"/api/trips/{loaded.state.id}/mode",
+            json={"enabled": True, "expected_version": loaded.state.version, "request_id": "mode-1"},
+        )
+        fetched = client.get(f"/api/trips/{loaded.state.id}")
+
+    assert response.status_code == 200
+    assert response.json()["travel_mode"] is True
+    assert response.json()["version"] == loaded.state.version + 1
+    assert fetched.json()["travel_mode"] is True
+
+
+def test_completion_event_updates_trip_and_exposes_run_status(tmp_path, scenario) -> None:
+    from adaptive_trip.api.app import create_app
+    from adaptive_trip.storage.repository import Repository
+
+    loaded = scenario("rain")
+    repository = Repository(tmp_path / "trip.db")
+    repository.create(loaded.state)
+    target_id = loaded.state.items[1].id
+
+    with TestClient(create_app(repository, clock=lambda: loaded.now)) as client:
+        response = client.post(
+            f"/api/trips/{loaded.state.id}/events",
+            json={
+                "kind": "completion",
+                "payload": {"item_ids": [target_id]},
+                "expected_version": loaded.state.version,
+                "request_id": "complete-1",
+            },
+        )
+        run = client.get(f"/api/runs/{response.json()['run_id']}")
+        fetched = client.get(f"/api/trips/{loaded.state.id}")
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "completed"
+    assert run.status_code == 200
+    assert run.json()["status"] == "completed"
+    assert fetched.json()["version"] == loaded.state.version + 1
+    assert next(item for item in fetched.json()["items"] if item["id"] == target_id)["status"] == "completed"
+
+
+def test_stale_user_event_is_rejected_without_changing_trip(tmp_path, scenario) -> None:
+    from adaptive_trip.api.app import create_app
+    from adaptive_trip.storage.repository import Repository
+
+    loaded = scenario("rain")
+    repository = Repository(tmp_path / "trip.db")
+    repository.create(loaded.state)
+
+    with TestClient(create_app(repository, clock=lambda: loaded.now)) as client:
+        first = client.patch(
+            f"/api/trips/{loaded.state.id}/mode",
+            json={"enabled": True, "expected_version": loaded.state.version, "request_id": "mode-1"},
+        )
+        stale = client.patch(
+            f"/api/trips/{loaded.state.id}/mode",
+            json={"enabled": False, "expected_version": loaded.state.version, "request_id": "mode-2"},
+        )
+
+    assert first.status_code == 200
+    assert stale.status_code == 409
+
+
+def test_duplicate_user_event_does_not_increment_trip_version_twice(tmp_path, scenario) -> None:
+    from adaptive_trip.api.app import create_app
+    from adaptive_trip.storage.repository import Repository
+
+    loaded = scenario("rain")
+    repository = Repository(tmp_path / "trip.db")
+    repository.create(loaded.state)
+    body = {
+        "kind": "weather",
+        "payload": {"precipitation_probability": 80},
+        "expected_version": loaded.state.version,
+        "request_id": "weather-duplicate",
+    }
+
+    with TestClient(create_app(repository, clock=lambda: loaded.now)) as client:
+        first = client.post(f"/api/trips/{loaded.state.id}/events", json=body)
+        second = client.post(f"/api/trips/{loaded.state.id}/events", json=body)
+        fetched = client.get(f"/api/trips/{loaded.state.id}")
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert fetched.json()["version"] == loaded.state.version + 1
+    assert len(repository.events(loaded.state.id)) == 1
+
+
 def test_accepting_a_proposal_over_http_updates_the_trip(tmp_path, scenario) -> None:
     from adaptive_trip.api.app import create_app
     from adaptive_trip.domain.models import Candidate, Proposal, Report

@@ -52,3 +52,13 @@ CREATE TABLE IF NOT EXISTS draft_confirmation_requests (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (draft_id, request_id)
 );
+
+CREATE TABLE IF NOT EXISTS runs (
+    id TEXT PRIMARY KEY,
+    trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'completed', 'failed')),
+    proposal_id TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

@@ -185,6 +185,61 @@ class Repository:
             ).fetchall()
         return [ChangeEvent.model_validate_json(row["event_json"]) for row in rows]
 
+    def apply_event(self, state: TripState, event: ChangeEvent, *, expected_version: int) -> tuple[TripState, bool]:
+        with self._transaction() as connection:
+            existing = connection.execute(
+                "SELECT event_json FROM events WHERE trip_id = ? AND fingerprint = ?",
+                (event.trip_id, event.fingerprint),
+            ).fetchone()
+            if existing is not None:
+                return state, False
+            cursor = connection.execute(
+                """
+                UPDATE trips SET version = ?, state_json = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND version = ?
+                """,
+                (state.version, state.model_dump_json(), state.id, expected_version),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("trip version conflict")
+            connection.execute(
+                "INSERT INTO events (id, trip_id, fingerprint, event_json) VALUES (?, ?, ?, ?)",
+                (event.id, event.trip_id, event.fingerprint, event.model_dump_json()),
+            )
+            return state, True
+
+    def event_exists(self, trip_id: str, fingerprint: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM events WHERE trip_id = ? AND fingerprint = ?",
+                (trip_id, fingerprint),
+            ).fetchone()
+        return row is not None
+
+    def create_run(self, run_id: str, trip_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO runs (id, trip_id, status) VALUES (?, ?, 'pending')",
+                (run_id, trip_id),
+            )
+
+    def update_run(self, run_id: str, *, status: str, proposal_id: str | None = None, error: str | None = None) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE runs SET status = ?, proposal_id = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (status, proposal_id, error, run_id),
+            )
+
+    def get_run(self, run_id: str) -> dict[str, str | None]:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT id, trip_id, status, proposal_id, error FROM runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"run {run_id!r} does not exist")
+        return dict(row)
+
     def save_proposal(self, proposal: Proposal) -> None:
         with self._connect() as connection:
             connection.execute(

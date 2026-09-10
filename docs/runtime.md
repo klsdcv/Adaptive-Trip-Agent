@@ -30,6 +30,12 @@ trip timezone. Drafts and idempotent confirmation request IDs persist in SQLite.
 
 `GET /api/trips/{id}/weather` fetches Open-Meteo for its current position.
 `GET /api/trips/{id}/notifications` returns detected weather impacts.
+`PATCH /api/trips/{id}/mode` toggles travel mode with an expected state version.
+User status changes use `POST /api/trips/{id}/events` with `kind`, `payload`,
+`expected_version`, and `request_id`; the response is a `run_id` that can be
+polled at `GET /api/runs/{id}`. Completion, position, preference, expense,
+fixed-condition, delay, closure, weather, and fatigue events are versioned and
+deduplicated by request ID.
 `POST /api/trips/{id}/events` invokes the configured OpenAI model and validates
 its candidates. Provider errors and invalid model output preserve the itinerary.
 The model can request bounded Google place searches, place details, and routes,
