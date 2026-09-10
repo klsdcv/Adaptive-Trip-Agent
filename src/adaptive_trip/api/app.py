@@ -32,6 +32,11 @@ def create_app(
         parser=intake_parser,
     )
     app = FastAPI(title="Adaptive Trip Agent")
+
+    @app.get("/api/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
     app.include_router(
         build_router(repository, active_decisions, replanner, active_clock, active_intake)
     )
