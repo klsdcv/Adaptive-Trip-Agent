@@ -12,6 +12,7 @@ from typing import Any
 from adaptive_trip.domain.models import Check
 
 from .metrics import score
+from .scenarios import default_scenarios
 
 Strategy = Callable[[Any, int], Iterable[Check] | Awaitable[Iterable[Check]]]
 
@@ -59,12 +60,17 @@ def write_results(path: str | Path, result: Mapping[str, Any]) -> None:
 
 def _main() -> None:
     parser = argparse.ArgumentParser(description="Run synthetic trip evaluations")
-    parser.add_argument("--scenarios", type=Path, required=True)
+    parser.add_argument("--mode", choices=["synthetic"], default="synthetic")
+    parser.add_argument("--scenarios", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
-    scenarios = json.loads(args.scenarios.read_text(encoding="utf-8"))
+    scenarios = (
+        json.loads(args.scenarios.read_text(encoding="utf-8"))
+        if args.scenarios
+        else default_scenarios()
+    )
 
     async def baseline(_scenario: Any, _seed: int) -> list[Check]:
         return []
